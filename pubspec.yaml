@@ -37,6 +37,12 @@ dependencies:
   flame: ^1.16.0  # Game engine for Flutter
   flame_audio: ^2.1.8  # For game audio
   flame_svg: ^1.8.9  # For SVG support in Flame
+  animated_text_kit: ^4.2.2  # Per animazioni di testo
+  simple_animations: ^5.0.2  # Per animazioni personalizzate
+  flutter_animate: ^4.5.0  # Per animazioni fluide
+  cached_network_image: ^3.3.1  # Per caricare e memorizzare immagini da Internet
+  lottie: ^3.0.0  # Per animazioni Lottie
+  particles_flutter: ^0.1.4  # Per effetti particellari
 
 dev_dependencies:
   flutter_test:

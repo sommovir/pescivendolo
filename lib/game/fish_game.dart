@@ -3,6 +3,9 @@ import 'dart:developer' as developer;
 
 import 'package:flame/game.dart';
 import 'package:flame/input.dart';
+import 'package:flame/components.dart';
+import 'package:flame/effects.dart';
+import 'package:flame/particles.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:pescivendolo_game/game/audio_manager.dart';
@@ -10,6 +13,7 @@ import 'package:pescivendolo_game/game/components/player_fish.dart';
 import 'package:pescivendolo_game/game/components/enemy_fish.dart';
 import 'package:pescivendolo_game/game/components/octopus_enemy.dart';
 import 'package:pescivendolo_game/game/components/hud.dart';
+import 'package:pescivendolo_game/game/components/water_background.dart';
 
 class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   late PlayerFish player;
@@ -22,6 +26,10 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   // Timer per il polipetto
   double _octopusSpawnTimer = 0;
   final double _octopusSpawnInterval = 5.0; // Spawn octopus every 5 seconds
+  
+  // Timer per le bolle
+  double _bubbleTimer = 0;
+  final double _bubbleInterval = 0.5; // Genera bolle ogni 0.5 secondi
   
   late Hud hud;
   
@@ -43,6 +51,9 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       developer.log('FishGame: impostazione sfondo');
       // Imposta lo sfondo blu per rappresentare l'acqua
       camera.viewfinder.visibleGameSize = Vector2(800, 600);
+      
+      // Aggiungi lo sfondo acquatico
+      add(WaterBackgroundComponent());
       
       developer.log('FishGame: creazione player');
       // Aggiungi il pesce giocatore
@@ -123,6 +134,13 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
           _spawnOctopus();
         }
       }
+      
+      // Genera bolle a intervalli regolari
+      _bubbleTimer += dt;
+      if (_bubbleTimer >= _bubbleInterval) {
+        _bubbleTimer = 0;
+        _spawnBubble();
+      }
     } catch (e, stackTrace) {
       developer.log('Errore in FishGame.update: $e\n$stackTrace');
     }
@@ -176,6 +194,23 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       developer.log('Errore in FishGame._spawnOctopus: $e\n$stackTrace');
     }
   }
+  
+  void _spawnBubble() {
+    try {
+      // Crea una bolla in una posizione casuale sul fondo dello schermo
+      final bubbleSize = _random.nextDouble() * 15 + 5; // Dimensione casuale tra 5 e 20
+      final bubbleX = _random.nextDouble() * size.x;
+      final bubbleY = size.y + bubbleSize;
+      
+      final bubble = BubbleComponent(
+        position: Vector2(bubbleX, bubbleY),
+        size: Vector2(bubbleSize, bubbleSize),
+      );
+      add(bubble);
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame._spawnBubble: $e\n$stackTrace');
+    }
+  }
 
   void increaseScore() {
     score++;
@@ -206,6 +241,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       lives = 3;
       _spawnTimer = 0;
       _octopusSpawnTimer = 0;
+      _bubbleTimer = 0;
       
       // Rimuovi tutti i nemici esistenti
       children.whereType<EnemyFish>().forEach((enemy) {
@@ -216,6 +252,10 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       children.whereType<OctopusEnemy>().forEach((octopus) {
         developer.log('FishGame: rimozione polipetto');
         octopus.removeFromParent();
+      });
+      
+      children.whereType<BubbleComponent>().forEach((bubble) {
+        bubble.removeFromParent();
       });
       
       // Reimposta la posizione del giocatore
@@ -245,5 +285,138 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     _keysPressed.clear();
     _keysPressed.addAll(keysPressed);
     return KeyEventResult.handled;
+  }
+}
+
+class WaterBackgroundComponent extends Component {
+  @override
+  Future<void> onLoad() async {
+    final topColor = Paint()..color = const Color(0xFF87CEEB); // Azzurro cielo
+    final middleColor = Paint()..color = const Color(0xFF4682B4); // Blu acciaio
+    final bottomColor = Paint()..color = const Color(0xFF000080); // Blu navy
+    
+    // Sfondo a gradiente
+    final background = GradientBackgroundComponent(
+      colors: [topColor.color, middleColor.color, bottomColor.color],
+      stops: const [0.0, 0.6, 1.0],
+    );
+    add(background);
+    
+    // Aggiungi raggi di luce
+    for (int i = 0; i < 5; i++) {
+      final x = Random().nextDouble() * 800;
+      final lightRay = LightRayComponent(
+        position: Vector2(x, 0),
+        width: 100 + Random().nextDouble() * 100,
+      );
+      add(lightRay);
+    }
+  }
+}
+
+class GradientBackgroundComponent extends PositionComponent {
+  final List<Color> colors;
+  final List<double> stops;
+  
+  GradientBackgroundComponent({
+    required this.colors,
+    required this.stops,
+  });
+  
+  @override
+  void render(Canvas canvas) {
+    final rect = Rect.fromLTWH(0, 0, 800, 600);
+    final paint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: colors,
+        stops: stops,
+      ).createShader(rect);
+    
+    canvas.drawRect(rect, paint);
+  }
+}
+
+class LightRayComponent extends PositionComponent {
+  final double width;
+  
+  LightRayComponent({
+    required Vector2 position,
+    required this.width,
+  }) : super(position: position);
+  
+  @override
+  Future<void> onLoad() async {
+    final paint = Paint()
+      ..color = const Color(0xAAFFFFFF)
+      ..style = PaintingStyle.fill;
+    
+    add(
+      RectangleComponent(
+        position: Vector2(0, 0),
+        size: Vector2(width, 600),
+        paint: paint,
+      )
+      ..add(
+        OpacityEffect.to(
+          0.3,
+          EffectController(
+            duration: 3 + Random().nextDouble() * 2,
+            reverseDuration: 3 + Random().nextDouble() * 2,
+            infinite: true,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class BubbleComponent extends PositionComponent {
+  static final Paint _bubblePaint = Paint()
+    ..color = const Color(0x55FFFFFF)
+    ..style = PaintingStyle.fill;
+  
+  BubbleComponent({
+    required Vector2 position,
+    required Vector2 size,
+  }) : super(position: position, size: size);
+  
+  @override
+  Future<void> onLoad() async {
+    // Aggiungi un effetto di movimento verso l'alto con leggero zigzag
+    final random = Random();
+    final speedY = 30 + random.nextDouble() * 20;
+    final speedX = (random.nextDouble() * 10) - 5;
+    
+    add(
+      MoveEffect.by(
+        Vector2(speedX, -600 - size.y),
+        EffectController(
+          duration: 600 / speedY,
+        ),
+        onComplete: () => removeFromParent(),
+      ),
+    );
+  }
+  
+  @override
+  void render(Canvas canvas) {
+    canvas.drawCircle(
+      Offset(size.x / 2, size.y / 2),
+      size.x / 2,
+      _bubblePaint,
+    );
+    
+    // Riflesso della bolla
+    final highlightPaint = Paint()
+      ..color = const Color(0x33FFFFFF)
+      ..style = PaintingStyle.fill;
+    
+    canvas.drawCircle(
+      Offset(size.x * 0.3, size.y * 0.3),
+      size.x * 0.2,
+      highlightPaint,
+    );
   }
 }
