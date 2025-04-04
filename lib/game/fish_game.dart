@@ -68,7 +68,11 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   
   // Tasti premuti
   final Set<LogicalKeyboardKey> _keysPressed = {};
-
+  
+  // Stato dell'orientamento
+  bool _isLandscapeMode = false;
+  bool get isLandscapeMode => _isLandscapeMode;
+  
   @override
   Future<void> onLoad() async {
     developer.log('FishGame: onLoad iniziato');
@@ -490,6 +494,33 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       developer.log('FishGame: motore di gioco ripreso con successo');
     } catch (e, stackTrace) {
       developer.log('Errore in FishGame.reset: $e\n$stackTrace');
+    }
+  }
+  
+  // Metodo per aggiornare l'orientamento
+  void updateOrientation(bool isLandscape) {
+    try {
+      _isLandscapeMode = isLandscape;
+      
+      // Aggiusta la posizione del player se necessario
+      if (player.isLoaded) {
+        // Assicurati che il player sia sempre in una posizione visibile
+        if (player.position.x > size.x - player.size.x) {
+          player.position.x = size.x - player.size.x;
+        }
+        if (player.position.y > size.y - player.size.y) {
+          player.position.y = size.y - player.size.y;
+        }
+      }
+      
+      // Aggiorna i componenti dello sfondo
+      children.whereType<FullScreenGradientComponent>().forEach((component) {
+        component.onGameResize(size);
+      });
+      
+      developer.log('FishGame: orientamento aggiornato a ${isLandscape ? 'landscape' : 'portrait'}');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame.updateOrientation: $e\n$stackTrace');
     }
   }
 }

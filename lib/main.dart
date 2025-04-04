@@ -11,6 +11,17 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:animated_text_kit/animated_text_kit.dart';
 
 void main() {
+  // Assicurati che il binding sia inizializzato
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Permetti sia portrait che landscape orientations
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
+  
   runApp(const MyApp());
 }
 
@@ -38,16 +49,62 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
+class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   late FishGame _game;
   bool _isFullScreen = false;
+  bool _isLandscape = false;
 
   @override
   void initState() {
     super.initState();
     _game = FishGame();
+    
+    // Registra l'observer per i cambiamenti di orientamento
+    WidgetsBinding.instance.addObserver(this);
+    
+    // Controlla l'orientamento iniziale
+    _checkOrientation();
   }
-
+  
+  @override
+  void dispose() {
+    // Rimuovi l'observer quando il widget viene distrutto
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+  
+  @override
+  void didChangeMetrics() {
+    // Questo metodo viene chiamato quando cambiano le metriche (incluso l'orientamento)
+    super.didChangeMetrics();
+    _checkOrientation();
+  }
+  
+  void _checkOrientation() {
+    // Controlla se siamo in modalità landscape
+    final orientation = MediaQuery.of(context).orientation;
+    final newIsLandscape = orientation == Orientation.landscape;
+    
+    if (_isLandscape != newIsLandscape) {
+      setState(() {
+        _isLandscape = newIsLandscape;
+      });
+      
+      // Aggiorna il gioco con la nuova orientazione
+      _updateGameBasedOnOrientation();
+    }
+  }
+  
+  void _updateGameBasedOnOrientation() {
+    // Aggiorna il gioco in base all'orientamento
+    if (_game.isLoaded) {
+      _game.updateOrientation(_isLandscape);
+      
+      // Forza l'aggiornamento delle dimensioni del gioco
+      _updateGameSize();
+    }
+  }
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -390,7 +447,7 @@ class _StartGameOverlayState extends State<StartGameOverlay> with TickerProvider
                                     widget.game.overlays.add('gameHud');
                                     
                                     // Se siamo su mobile/tablet, mostra i controlli touch
-                                    if (_isMobileDevice(context)) {
+                                    if (MediaQuery.of(context).size.width < 768) {
                                       widget.game.overlays.add('touchControls');
                                     }
                                   },
@@ -447,7 +504,7 @@ class _StartGameOverlayState extends State<StartGameOverlay> with TickerProvider
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          _isMobileDevice(context) 
+                          MediaQuery.of(context).size.width < 768 
                               ? 'Usa il joystick per muoverti' 
                               : 'Usa WASD o frecce per muoverti',
                           style: const TextStyle(
@@ -637,6 +694,17 @@ class _TouchControlsOverlayState extends State<TouchControlsOverlay> {
   
   @override
   Widget build(BuildContext context) {
+    // Adatta la posizione del joystick in base all'orientamento
+    final screenSize = MediaQuery.of(context).size;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    
+    // Posiziona il joystick in base all'orientamento
+    if (isLandscape) {
+      _basePosition = Offset(150, screenSize.height / 2); // A sinistra al centro in landscape
+    } else {
+      _basePosition = Offset(100, screenSize.height - 150); // In basso a sinistra in portrait
+    }
+    
     return Positioned.fill(
       child: GestureDetector(
         onPanStart: (details) {
