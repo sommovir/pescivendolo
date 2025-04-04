@@ -14,6 +14,7 @@ import 'package:pescivendolo_game/game/components/enemy_fish.dart';
 import 'package:pescivendolo_game/game/components/octopus_enemy.dart';
 import 'package:pescivendolo_game/game/components/jellyfish_enemy.dart';
 import 'package:pescivendolo_game/game/components/electric_eel_enemy.dart';
+import 'package:pescivendolo_game/game/components/swordfish_enemy.dart';
 import 'package:pescivendolo_game/game/components/hud.dart';
 import 'package:pescivendolo_game/game/components/water_background.dart';
 
@@ -40,6 +41,11 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   // Timer per la murena elettrica
   double _eelSpawnTimer = 0;
   double _eelSpawnInterval = 5.0; // Spawn electric eel every 5 seconds (aumentato ulteriormente)
+  
+  // Timer per il pesce spada
+  double _swordfishSpawnTimer = 0;
+  double _swordfishSpawnInterval = 15.0; // Spawn pesce spada ogni 15 secondi (inizialmente raro)
+  int _maxSimultaneousSwordfish = 1; // Numero massimo di pesci spada simultanei, aumenterà col tempo
   
   // Timer per le bolle
   double _bubbleTimer = 0;
@@ -199,6 +205,17 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         }
       }
       
+      // Genera pesci spada a intervalli
+      _swordfishSpawnTimer += dt;
+      if (_swordfishSpawnTimer >= _swordfishSpawnInterval) {
+        _swordfishSpawnTimer = 0;
+        // Probabilità crescente in base al livello di difficoltà
+        double swordfishChance = 0.1 + (_difficultyLevel * 0.02); // Aumentata
+        if (_random.nextDouble() < swordfishChance) {
+          _spawnSwordfish();
+        }
+      }
+      
       // Genera bolle a intervalli regolari
       _bubbleTimer += dt;
       if (_bubbleTimer >= _bubbleInterval) {
@@ -228,6 +245,9 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       
       // Aumenta la dimensione dei branchi di meduse
       _maxJellyfishInSwarm = min(_maxJellyfishInSwarm + 1, 12); // Massimo 12 meduse
+      
+      // Aumenta il numero massimo di pesci spada simultanei
+      _maxSimultaneousSwordfish = min(_maxSimultaneousSwordfish + 1, 3); // Massimo 3 pesci spada
     }
   }
   
@@ -364,6 +384,49 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     }
   }
   
+  void _spawnSwordfish() {
+    try {
+      developer.log('FishGame: generazione pesce spada');
+      
+      // Calcola quanti pesci spada generare contemporaneamente in base al livello di difficoltà
+      int swordfishCount = _random.nextInt(_maxSimultaneousSwordfish) + 1;
+      
+      for (int i = 0; i < swordfishCount; i++) {
+        // Calcola la velocità in base al livello di difficoltà (velocità variabile)
+        double baseSpeed = _baseEnemySpeed + (_difficultyLevel * 25); // Base speed increases with difficulty
+        double speedVariation = _random.nextDouble() * 30.0 - 15.0; // ±15
+        double swordfishSpeed = baseSpeed + speedVariation;
+        
+        // La velocità di carica è molto più alta della velocità normale
+        double chargeSpeed = swordfishSpeed * 3.5; // 3.5 volte più veloce durante la carica
+        
+        // Posizione Y casuale per il pesce spada
+        double posY = _random.nextDouble() * (size.y - 150) + 75;
+        
+        // Dimensione del pesce spada (leggermente più grande di un pesce normale)
+        double sizeMultiplier = 15 + _random.nextDouble() * 0.5; // Da 15x a 2x
+        
+        // Durata del tremore casuale tra 1 e 3 secondi come richiesto
+        double peekingDuration = 1.0 + _random.nextDouble() * 2.0; // Da 1 a 3 secondi
+        
+        final swordfish = SwordfishEnemy(
+          position: Vector2(
+            size.x + 20, // Inizia appena fuori dallo schermo a destra
+            posY, // Posizione Y casuale
+          ),
+          speed: swordfishSpeed,
+          sizeMultiplier: sizeMultiplier,
+          chargeSpeed: chargeSpeed,
+          peekingDuration: peekingDuration,
+        );
+        add(swordfish);
+        developer.log('FishGame: pesce spada #$i generato con successo');
+      }
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame._spawnSwordfish: $e\n$stackTrace');
+    }
+  }
+  
   void _spawnBubble() {
     try {
       // Crea una bolla in una posizione casuale sul fondo dello schermo
@@ -466,6 +529,11 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         eel.removeFromParent();
       });
       
+      children.whereType<SwordfishEnemy>().forEach((swordfish) {
+        developer.log('FishGame: rimozione pesce spada');
+        swordfish.removeFromParent();
+      });
+      
       children.whereType<BubbleComponent>().forEach((bubble) {
         bubble.removeFromParent();
       });
@@ -476,11 +544,13 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       _octopusSpawnTimer = 0;
       _jellyfishSpawnTimer = 0;
       _eelSpawnTimer = 0;
+      _swordfishSpawnTimer = 0;
       _bubbleTimer = 0;
       _difficultyTimer = 0;
       _difficultyLevel = 1;
       _baseEnemySpeed = 100.0;
       _maxJellyfishInSwarm = 3;
+      _maxSimultaneousSwordfish = 1;
       _health = 100.0;
       _gameTime = 0.0;
       
