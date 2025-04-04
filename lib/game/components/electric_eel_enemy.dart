@@ -46,6 +46,9 @@ class ElectricEelEnemy extends SpriteComponent with CollisionCallbacks, HasGameR
   // Getter per il danno da contatto, utilizzato da player_fish.dart nella collisione
   double get damageAmount => baseDamageAmount;
   
+  // Variabile per il controllo delle collisioni ravvicinate
+  bool _recentlyCollidedWithPlayer = false;
+  
   ElectricEelEnemy({
     required Vector2 position,
     required this.speed,
@@ -411,7 +414,13 @@ class ElectricEelEnemy extends SpriteComponent with CollisionCallbacks, HasGameR
       if (other == gameRef.player) {
         developer.log('ElectricEelEnemy: collisione con il giocatore!');
         // Damage on contact (25%)
-        gameRef.damagePlayer(baseDamageAmount);
+        if (!_recentlyCollidedWithPlayer) {
+          gameRef.damagePlayer(baseDamageAmount);
+          _recentlyCollidedWithPlayer = true;
+          Future.delayed(const Duration(milliseconds: 500), () {
+            _recentlyCollidedWithPlayer = false;
+          });
+        }
       }
     } catch (e, stackTrace) {
       developer.log('ERRORE in ElectricEelEnemy.onCollision: $e\n$stackTrace');

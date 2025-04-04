@@ -35,7 +35,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   
   // Timer per le meduse
   double _jellyfishSpawnTimer = 0;
-  double _jellyfishSpawnInterval = 20.0; // Spawn jellyfish every 20 seconds (inizialmente rare)
+  double _jellyfishSpawnInterval = 8.0; // Spawn jellyfish every 8 seconds (increased frequency from 20)
   
   // Timer per la murena elettrica
   double _eelSpawnTimer = 0;
@@ -182,7 +182,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       if (_jellyfishSpawnTimer >= _jellyfishSpawnInterval) {
         _jellyfishSpawnTimer = 0;
         // Probabilità crescente in base al livello di difficoltà
-        double jellyfishChance = 0.2 + (_difficultyLevel * 0.05);
+        double jellyfishChance = 0.5 + (_difficultyLevel * 0.05); // Increased base chance from 0.2 to 0.5
         if (_random.nextDouble() < jellyfishChance) {
           _spawnJellyfishSwarm();
         }
