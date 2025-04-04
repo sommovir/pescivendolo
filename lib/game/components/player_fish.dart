@@ -16,6 +16,11 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
   bool _movingLeft = false;
   bool _movingRight = false;
   
+  // Effetto di invulnerabilità temporanea dopo aver subito un danno
+  bool _isInvulnerable = false;
+  double _invulnerabilityTimer = 0;
+  final double _invulnerabilityDuration = 0.5; // Mezzo secondo di invulnerabilità
+  
   PlayerFish() : super(size: Vector2(80, 60), position: Vector2(100, 300)) {
     developer.log('PlayerFish: costruttore chiamato');
     anchor = Anchor.center;
@@ -64,6 +69,19 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
         Vector2(width / 2, height / 2),
         Vector2(gameRef.size.x - width / 2, gameRef.size.y - height / 2),
       );
+      
+      // Gestisci l'invulnerabilità temporanea
+      if (_isInvulnerable) {
+        _invulnerabilityTimer -= dt;
+        
+        // Effetto di lampeggiamento durante l'invulnerabilità
+        opacity = _invulnerabilityTimer * 4 % 1 > 0.5 ? 0.5 : 1.0;
+        
+        if (_invulnerabilityTimer <= 0) {
+          _isInvulnerable = false;
+          opacity = 1.0; // Ripristina l'opacità normale
+        }
+      }
     } catch (e, stackTrace) {
       developer.log('Errore in PlayerFish.update: $e\n$stackTrace');
     }
@@ -90,11 +108,15 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
     try {
       super.onCollision(intersectionPoints, other);
       
+      // Se il giocatore è invulnerabile, ignora le collisioni
+      if (_isInvulnerable) return;
+      
       if (other is EnemyFish) {
         if (other.isDangerous) {
           // Il giocatore è stato colpito da un pesce pericoloso
           developer.log('PlayerFish: collisione con pesce pericoloso');
           gameRef.decreaseHealth(other.damageAmount);
+          _activateInvulnerability();
           other.removeFromParent();
         } else {
           // Il giocatore ha mangiato un pesce sicuro
@@ -112,15 +134,23 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
         // La medusa è pericolosa e toglie il 10% di vita
         developer.log('PlayerFish: collisione con medusa');
         gameRef.decreaseHealth(other.damageAmount);
+        _activateInvulnerability();
         other.removeFromParent();
       } else if (other is ElectricEelEnemy) {
         // La murena elettrica è molto pericolosa e toglie il 25% di vita
         developer.log('PlayerFish: collisione con murena elettrica');
         gameRef.decreaseHealth(other.damageAmount);
+        _activateInvulnerability();
         other.removeFromParent();
       }
     } catch (e, stackTrace) {
       developer.log('Errore in PlayerFish.onCollision: $e\n$stackTrace');
     }
+  }
+  
+  // Attiva l'invulnerabilità temporanea dopo aver subito un danno
+  void _activateInvulnerability() {
+    _isInvulnerable = true;
+    _invulnerabilityTimer = _invulnerabilityDuration;
   }
 }

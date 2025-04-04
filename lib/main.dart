@@ -1,13 +1,14 @@
+import 'dart:math';
+import 'dart:async';
+import 'dart:html' as html;
+import 'dart:ui' as ui;
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:pescivendolo_game/game/fish_game.dart';
 import 'package:pescivendolo_game/game/audio_manager.dart';
 import 'package:pescivendolo_game/game/components/water_background.dart';
-import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'dart:developer' as developer;
-import 'dart:math' as math;
+import 'package:animated_text_kit/animated_text_kit.dart';
 
 void main() {
   runApp(const MyApp());
@@ -19,11 +20,11 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Pescivendolo',
+      title: 'Pescivendolo Game',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
       home: const GameScreen(),
     );
@@ -38,47 +39,91 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen> {
-  late final FishGame game;
-  
+  late FishGame _game;
+  bool _isFullScreen = false;
+
   @override
   void initState() {
     super.initState();
-    game = FishGame();
+    _game = FishGame();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: GestureDetector(
-        // Cattura tutti i tocchi/clic sull'intero schermo
-        onTapDown: (_) {
-          developer.log('Utente ha interagito con lo schermo');
-          AudioManager.setUserInteracted();
-        },
-        // Assicurati che il GestureDetector copra l'intera area
-        behavior: HitTestBehavior.translucent,
-        child: GameWidget<FishGame>(
-          game: game,
-          overlayBuilderMap: {
-            'gameOver': (context, game) => GameOverOverlay(game: game),
-            'startGame': (context, game) => StartGameOverlay(game: game),
-          },
-          initialActiveOverlays: const ['startGame'],
-          backgroundBuilder: (context) => Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.blue.shade300,
-                  Colors.blue.shade900,
-                ],
+      body: Stack(
+        children: [
+          GameWidget<FishGame>(
+            game: _game,
+            loadingBuilder: (context) => const Center(
+              child: CircularProgressIndicator(),
+            ),
+            errorBuilder: (context, error) => Center(
+              child: Text(
+                'Si è verificato un errore: $error',
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontSize: 20,
+                ),
               ),
             ),
+            overlayBuilderMap: {
+              'startGame': (context, game) => StartGameOverlay(game: game),
+              'gameOver': (context, game) => GameOverOverlay(game: game),
+              'gameHud': (context, game) => GameHudOverlay(game: game),
+              'touchControls': (context, game) => TouchControlsOverlay(game: game),
+            },
+            initialActiveOverlays: const ['startGame'],
           ),
-        ),
+          
+          // Pulsante Fullscreen
+          Positioned(
+            top: 10,
+            right: 10,
+            child: IconButton(
+              icon: Icon(
+                _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                color: Colors.white,
+                size: 30,
+              ),
+              onPressed: () {
+                _toggleFullScreen();
+              },
+            ),
+          ),
+        ],
       ),
     );
+  }
+  
+  void _toggleFullScreen() {
+    try {
+      // Preserva gli overlay attivi prima di togglefare il fullscreen
+      final activeOverlays = _game.overlays.activeOverlays.toList();
+      
+      // Aggiorna lo stato fullscreen
+      setState(() {
+        _isFullScreen = !_isFullScreen;
+      });
+      
+      // Applica il fullscreen
+      if (_isFullScreen) {
+        html.document.documentElement?.requestFullscreen();
+      } else {
+        html.document.exitFullscreen();
+      }
+      
+      // Piccolo ritardo per assicurarsi che lo stato del DOM sia aggiornato
+      Future.delayed(const Duration(milliseconds: 100), () {
+        // Assicurati che gli stessi overlay siano attivi dopo il toggle
+        _game.overlays.clear();
+        for (final overlay in activeOverlays) {
+          _game.overlays.add(overlay);
+        }
+      });
+    } catch (e) {
+      print('Errore nel toggle fullscreen: $e');
+    }
   }
 }
 
@@ -91,15 +136,115 @@ class StartGameOverlay extends StatefulWidget {
   State<StartGameOverlay> createState() => _StartGameOverlayState();
 }
 
-class _StartGameOverlayState extends State<StartGameOverlay> {
+class _StartGameOverlayState extends State<StartGameOverlay> with TickerProviderStateMixin {
   bool _hoveringStartButton = false;
+  late Timer _fishMoveTimer;
+  late AnimationController _bubbleAnimationController;
+  
+  // Immagini dei pesci dagli assets
   final List<String> _fishImages = [
-    'https://www.pngall.com/wp-content/uploads/5/Tropical-Fish-PNG-Image-HD.png',
-    'https://www.pngall.com/wp-content/uploads/5/Tropical-Fish-PNG-Free-Download.png',
-    'https://www.pngall.com/wp-content/uploads/5/Tropical-Fish-PNG-Free-Image.png',
-    'https://www.pngall.com/wp-content/uploads/5/Tropical-Fish-PNG-Clipart.png',
+    'assets/images/enemy_fish.png',
+    'assets/images/good_fish.png',
+    'assets/images/polipetto.png',
+    'assets/images/medusa.png',
+    'assets/images/murena-elettrica.png',
   ];
-
+  
+  // Lista dei pesci animati
+  final List<FishAnimation> _fishAnimations = [];
+  // Lista di bolle per l'animazione naturale
+  final List<NaturalBubble> _naturalBubbles = [];
+  final Random _random = Random();
+  
+  @override
+  void initState() {
+    super.initState();
+    
+    // Inizializza le bolle naturali
+    _initializeNaturalBubbles();
+    
+    // Controller per l'animazione delle bolle
+    _bubbleAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 16),
+    )..addListener(() {
+      _updateBubblePositions();
+    });
+    
+    // Avvia l'animazione delle bolle
+    _bubbleAnimationController.repeat();
+    
+    // Crea pesci con posizioni casuali
+    _initializeFishAnimations();
+    
+    // Avvia il timer per muovere i pesci
+    _fishMoveTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      _updateFishPositions();
+    });
+  }
+  
+  @override
+  void dispose() {
+    _fishMoveTimer.cancel();
+    _bubbleAnimationController.dispose();
+    super.dispose();
+  }
+  
+  void _initializeNaturalBubbles() {
+    // Crea un numero appropriato di bolle con posizioni casuali
+    for (int i = 0; i < 20; i++) {
+      _naturalBubbles.add(NaturalBubble(
+        x: _random.nextDouble() * 1000,
+        y: _random.nextDouble() * 800 + 200, // Inizia da sotto lo schermo
+        radius: _random.nextDouble() * 6 + 3, // Dimensioni varie ma non troppo grandi
+        speed: _random.nextDouble() * 0.5 + 0.2, // Molto lento
+        opacity: _random.nextDouble() * 0.3 + 0.2, // Semitrasparente
+        wobble: _random.nextDouble() * 0.5, // Leggero movimento laterale
+      ));
+    }
+  }
+  
+  void _updateBubblePositions() {
+    setState(() {
+      for (final bubble in _naturalBubbles) {
+        // Movimento verso l'alto
+        bubble.y -= bubble.speed;
+        
+        // Leggero movimento laterale (wobble)
+        bubble.x += sin(bubble.y * 0.05) * bubble.wobble;
+        
+        // Se la bolla esce dallo schermo in alto, la riposiziona in basso
+        if (bubble.y < -bubble.radius * 2) {
+          bubble.y = 800 + bubble.radius * 2;
+          bubble.x = _random.nextDouble() * 1000;
+          bubble.radius = _random.nextDouble() * 6 + 3;
+          bubble.speed = _random.nextDouble() * 0.5 + 0.2;
+          bubble.opacity = _random.nextDouble() * 0.3 + 0.2;
+        }
+      }
+    });
+  }
+  
+  void _initializeFishAnimations() {
+    final random = Random();
+    
+    // Crea 12 pesci con posizioni e velocità casuali
+    for (int i = 0; i < 12; i++) {
+      final fishType = random.nextInt(_fishImages.length);
+      // Aumento la dimensione dei pesci di sfondo
+      final size = random.nextDouble() * 60 + 60; 
+      final speed = random.nextDouble() * 60 + 40; // Velocità in pixel al secondo
+      
+      _fishAnimations.add(FishAnimation(
+        image: _fishImages[fishType],
+        size: size,
+        speed: speed,
+        posY: random.nextDouble() * 800,
+        posX: random.nextDouble() * 1200 + 800, // Posizione iniziale fuori dallo schermo a destra
+      ));
+    }
+  }
+  
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
@@ -107,15 +252,13 @@ class _StartGameOverlayState extends State<StartGameOverlay> {
     return WaterBackground(
       child: Stack(
         children: [
-          // Effetto particelle di bolle
-          Positioned.fill(
-            child: _buildBubbleEffect(screenSize),
-          ),
+          // Strato più basso: pesci decorativi
+          ..._buildDecoFish(screenSize),
           
-          // Pesci decorativi animati
-          ..._buildDecoFish(),
+          // Strato intermedio: bolle naturali
+          ..._buildNaturalBubbles(),
           
-          // Contenuto principale
+          // Strato superiore: contenuto principale (UI)
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -167,123 +310,157 @@ class _StartGameOverlayState extends State<StartGameOverlay> {
                   ],
                   totalRepeatCount: 1,
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 60),
                 
-                // Istruzioni con animazione di fade-in
+                // Card con pulsante
                 Container(
-                  padding: const EdgeInsets.all(20),
-                  width: 400,
+                  width: 320,
+                  padding: const EdgeInsets.all(25),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(15),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.blue.shade800,
+                        Colors.blue.shade600,
+                        Colors.teal.shade500,
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 10,
-                        spreadRadius: 2,
+                        color: Colors.black.withOpacity(0.5),
+                        blurRadius: 15,
+                        spreadRadius: 5,
                       ),
                     ],
+                    border: Border.all(
+                      color: Colors.lightBlue.shade300,
+                      width: 2,
+                    ),
                   ),
                   child: Column(
                     children: [
-                      const Text(
-                        'Istruzioni:',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                      // Pulsante START GAME con effetto hover
+                      MouseRegion(
+                        onEnter: (_) => setState(() => _hoveringStartButton = true),
+                        onExit: (_) => setState(() => _hoveringStartButton = false),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          transform: _hoveringStartButton 
+                            ? (Matrix4.identity()..scale(1.1))
+                            : Matrix4.identity(),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(30),
+                            child: Stack(
+                              children: [
+                                // Pulsante base
+                                ElevatedButton(
+                                  onPressed: () {
+                                    // Imposta il flag di interazione utente
+                                    AudioManager.setUserInteracted();
+                                    
+                                    // Avvia il gioco
+                                    widget.game.startGame();
+                                    
+                                    // Attiva gli overlay necessari
+                                    widget.game.overlays.add('gameHud');
+                                    
+                                    // Se siamo su mobile/tablet, mostra i controlli touch
+                                    if (_isMobileDevice(context)) {
+                                      widget.game.overlays.add('touchControls');
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.orange.shade600,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+                                    textStyle: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(30),
+                                    ),
+                                    elevation: _hoveringStartButton ? 10 : 5,
+                                    shadowColor: Colors.orange.shade900,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.play_arrow, size: 30),
+                                      const SizedBox(width: 10),
+                                      const Text('GIOCA'),
+                                    ],
+                                  ),
+                                ),
+                                
+                                // Effetto di brillantezza con la stessa forma arrotondata
+                                Positioned.fill(
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(30),
+                                    child: Container()
+                                      .animate(
+                                        onPlay: (controller) => controller.repeat(),
+                                      )
+                                      .shimmer(
+                                        duration: 2000.ms,
+                                        color: Colors.white.withOpacity(0.4),
+                                        angle: 45,
+                                        size: 1.5,
+                                      ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 15),
-                      _buildInstructionRow(
-                        Icons.keyboard_arrow_up, 
-                        'Usa i tasti WASD o le frecce direzionali per muoverti'
-                      ),
-                      _buildInstructionRow(
-                        Icons.catching_pokemon, 
-                        'Mangia i pesci verdi (sicuri) per guadagnare punti'
-                      ),
-                      _buildInstructionRow(
-                        Icons.dangerous, 
-                        'Evita i pesci rossi (pericolosi) e i polipetti'
-                      ),
-                      _buildInstructionRow(
-                        Icons.favorite, 
-                        'Hai 3 vite, non sprecarle!'
+                      
+                      const SizedBox(height: 20),
+                      
+                      // Breve istruzione
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 15),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          _isMobileDevice(context) 
+                              ? 'Usa il joystick per muoverti' 
+                              : 'Usa WASD o frecce per muoverti',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                     ],
-                  ).animate().fadeIn(duration: 800.ms, delay: 300.ms),
-                ),
-                const SizedBox(height: 40),
-                
-                // Pulsante START GAME con effetto hover
-                MouseRegion(
-                  onEnter: (_) => setState(() => _hoveringStartButton = true),
-                  onExit: (_) => setState(() => _hoveringStartButton = false),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    transform: _hoveringStartButton 
-                      ? (Matrix4.identity()..scale(1.1))
-                      : Matrix4.identity(),
-                    child: ElevatedButton(
-                      onPressed: () {
-                        // Imposta il flag di interazione utente
-                        AudioManager.setUserInteracted();
-                        
-                        // Avvia il gioco
-                        widget.game.startGame();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _hoveringStartButton 
-                          ? Colors.green.shade400 
-                          : Colors.green.shade600,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                        textStyle: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        elevation: _hoveringStartButton ? 15 : 10,
-                        shadowColor: Colors.black.withOpacity(0.5),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('START GAME'),
-                          const SizedBox(width: 10),
-                          Icon(
-                            Icons.play_arrow,
-                            size: 28,
-                            color: Colors.white,
-                          ).animate(
-                            onPlay: (controller) => controller.repeat(),
-                          ).shimmer(
-                            duration: 1.5.seconds,
-                            delay: 500.ms,
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
-                ).animate().slideY(
-                  begin: 0.5, 
-                  end: 0, 
-                  duration: 500.ms,
-                  curve: Curves.easeOutBack,
                 ),
                 
-                // Versione
-                const Padding(
-                  padding: EdgeInsets.only(top: 40),
-                  child: Text(
-                    'v1.0.0',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white70,
-                    ),
+                // Versione e sviluppatore
+                Padding(
+                  padding: const EdgeInsets.only(top: 40),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'v1.2.0',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      const Text(
+                        'Sviluppato da "esistente-a-tratti"',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white70,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -294,108 +471,340 @@ class _StartGameOverlayState extends State<StartGameOverlay> {
     );
   }
   
-  Widget _buildBubbleEffect(Size screenSize) {
-    return Stack(
-      children: List.generate(
-        50,
-        (index) {
-          final random = math.Random();
-          final size = random.nextDouble() * 20 + 5;
-          final posX = random.nextDouble() * screenSize.width;
-          final posY = random.nextDouble() * screenSize.height;
-          final duration = (random.nextDouble() * 10 + 5).seconds;
-          
-          return Positioned(
-            left: posX,
-            top: posY,
-            child: Container(
-              width: size,
-              height: size,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.3),
-                shape: BoxShape.circle,
-              ),
-            ).animate(
-              onPlay: (controller) => controller.repeat(),
-            ).moveY(
-              begin: 0,
-              end: -screenSize.height,
-              duration: duration,
-              curve: Curves.linear,
-            ),
-          );
-        },
-      ),
-    );
-  }
-  
-  Widget _buildInstructionRow(IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  List<Widget> _buildDecoFish() {
-    final random = math.Random();
-    final screenSize = MediaQuery.of(context).size;
+  List<Widget> _buildDecoFish(Size screenSize) {
+    final List<Widget> fishWidgets = [];
     
-    return List.generate(
-      6,
-      (index) {
-        final size = random.nextDouble() * 80 + 40;
-        final posX = random.nextDouble() * screenSize.width;
-        final posY = random.nextDouble() * screenSize.height;
-        final duration = (random.nextDouble() * 20 + 10).seconds;
-        final delay = (random.nextDouble() * 5).seconds;
-        final imageIndex = random.nextInt(_fishImages.length);
-        
-        return Positioned(
-          left: posX,
-          top: posY,
-          child: SizedBox(
-            width: size,
-            height: size * 0.6,
-            child: CachedNetworkImage(
-              imageUrl: _fishImages[imageIndex],
-              placeholder: (context, url) => Container(),
-              errorWidget: (context, url, error) => Container(),
-            ),
-          ).animate(
-            onPlay: (controller) => controller.repeat(),
-          ).moveX(
-            begin: 0,
-            end: screenSize.width * 0.8,
-            duration: duration,
-            delay: delay,
-            curve: Curves.easeInOut,
-          ).then().moveX(
-            begin: screenSize.width * 0.8,
-            end: -size,
-            duration: duration,
-            curve: Curves.easeInOut,
-          ).then().moveX(
-            begin: screenSize.width,
-            end: 0,
-            duration: duration,
-            curve: Curves.easeInOut,
+    for (final fish in _fishAnimations) {
+      fishWidgets.add(
+        Positioned(
+          left: fish.posX,
+          top: fish.posY,
+          child: Image.asset(
+            fish.image,
+            width: fish.size,
+            height: fish.size * 0.75,
           ),
-        );
-      },
+        ),
+      );
+    }
+    
+    return fishWidgets;
+  }
+  
+  void _updateFishPositions() {
+    for (final fish in _fishAnimations) {
+      fish.posX -= fish.speed / 60; // Muove il pesce da destra a sinistra
+      
+      // Se il pesce esce dallo schermo a sinistra, lo riposiziona a destra
+      if (fish.posX < -fish.size) {
+        fish.posX = 1200 + fish.size;
+        fish.posY = Random().nextDouble() * 800;
+      }
+    }
+    
+    setState(() {});
+  }
+  
+  // Funzione per verificare se siamo su un dispositivo mobile
+  bool _isMobileDevice(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    // Considera mobile se la larghezza è inferiore a 768px o se è un dispositivo touch
+    return mediaQuery.size.width < 768;
+  }
+  
+  // Costruisce le bolle naturali
+  List<Widget> _buildNaturalBubbles() {
+    final List<Widget> bubbleWidgets = [];
+    
+    for (final bubble in _naturalBubbles) {
+      bubbleWidgets.add(
+        Positioned(
+          left: bubble.x,
+          top: bubble.y,
+          child: Container(
+            width: bubble.radius * 2,
+            height: bubble.radius * 2,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withOpacity(bubble.opacity),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.white.withOpacity(bubble.opacity * 0.5),
+                  blurRadius: 3,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(bubble.radius * 0.3),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Container(
+                  width: bubble.radius * 0.5,
+                  height: bubble.radius * 0.5,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(bubble.opacity + 0.3),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    
+    return bubbleWidgets;
+  }
+}
+
+class FishAnimation {
+  String image;
+  double size;
+  double speed;
+  double posY;
+  double posX;
+  
+  FishAnimation({
+    required this.image,
+    required this.size,
+    required this.speed,
+    required this.posY,
+    required this.posX,
+  });
+}
+
+class NaturalBubble {
+  double x;
+  double y;
+  double radius;
+  double speed;
+  double opacity;
+  double wobble;
+  
+  NaturalBubble({
+    required this.x,
+    required this.y,
+    required this.radius,
+    required this.speed,
+    required this.opacity,
+    required this.wobble,
+  });
+}
+
+// Overlay per il joystick e controlli touch
+class TouchControlsOverlay extends StatefulWidget {
+  final FishGame game;
+
+  const TouchControlsOverlay({super.key, required this.game});
+
+  @override
+  State<TouchControlsOverlay> createState() => _TouchControlsOverlayState();
+}
+
+class _TouchControlsOverlayState extends State<TouchControlsOverlay> {
+  // Posizione del joystick
+  Offset _joystickPosition = Offset.zero;
+  Offset _basePosition = const Offset(100, 500); // Posizione base del joystick
+  bool _isDragging = false;
+  
+  // Raggio del joystick
+  final double _joystickRadius = 50.0;
+  final double _handleRadius = 20.0;
+  
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: GestureDetector(
+        onPanStart: (details) {
+          if (_isWithinJoystick(details.localPosition)) {
+            setState(() {
+              _isDragging = true;
+              _updateJoystickPosition(details.localPosition);
+            });
+          }
+        },
+        onPanUpdate: (details) {
+          if (_isDragging) {
+            setState(() {
+              _updateJoystickPosition(details.localPosition);
+            });
+          }
+        },
+        onPanEnd: (_) {
+          setState(() {
+            _isDragging = false;
+            _joystickPosition = Offset.zero;
+            
+            // Ferma il movimento del pesce
+            widget.game.player.moveUp(false);
+            widget.game.player.moveDown(false);
+            widget.game.player.moveLeft(false);
+            widget.game.player.moveRight(false);
+          });
+        },
+        child: CustomPaint(
+          painter: JoystickPainter(
+            basePosition: _basePosition,
+            joystickPosition: _isDragging ? _basePosition + _joystickPosition : _basePosition,
+            baseRadius: _joystickRadius,
+            handleRadius: _handleRadius,
+          ),
+        ),
+      ),
+    );
+  }
+  
+  bool _isWithinJoystick(Offset position) {
+    return (position - _basePosition).distance <= _joystickRadius;
+  }
+  
+  void _updateJoystickPosition(Offset position) {
+    // Calcola la posizione relativa rispetto al centro del joystick
+    Offset newPosition = position - _basePosition;
+    
+    // Limita la distanza massima dal centro
+    if (newPosition.distance > _joystickRadius) {
+      newPosition = newPosition * (_joystickRadius / newPosition.distance);
+    }
+    
+    _joystickPosition = newPosition;
+    
+    // Aggiorna il movimento del pesce in base alla posizione del joystick
+    final double threshold = 0.3 * _joystickRadius;
+    
+    widget.game.player.moveUp(_joystickPosition.dy < -threshold);
+    widget.game.player.moveDown(_joystickPosition.dy > threshold);
+    widget.game.player.moveLeft(_joystickPosition.dx < -threshold);
+    widget.game.player.moveRight(_joystickPosition.dx > threshold);
+  }
+}
+
+// Painter per disegnare il joystick
+class JoystickPainter extends CustomPainter {
+  final Offset basePosition;
+  final Offset joystickPosition;
+  final double baseRadius;
+  final double handleRadius;
+  
+  JoystickPainter({
+    required this.basePosition,
+    required this.joystickPosition,
+    required this.baseRadius,
+    required this.handleRadius,
+  });
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Disegna la base del joystick
+    final basePaint = Paint()
+      ..color = Colors.white.withOpacity(0.3)
+      ..style = PaintingStyle.fill;
+    
+    canvas.drawCircle(basePosition, baseRadius, basePaint);
+    
+    // Disegna il bordo della base
+    final borderPaint = Paint()
+      ..color = Colors.white.withOpacity(0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    
+    canvas.drawCircle(basePosition, baseRadius, borderPaint);
+    
+    // Disegna il manico del joystick
+    final handlePaint = Paint()
+      ..color = Colors.white.withOpacity(0.7)
+      ..style = PaintingStyle.fill;
+    
+    canvas.drawCircle(joystickPosition, handleRadius, handlePaint);
+    
+    // Disegna il bordo del manico
+    final handleBorderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    
+    canvas.drawCircle(joystickPosition, handleRadius, handleBorderPaint);
+  }
+  
+  @override
+  bool shouldRepaint(covariant JoystickPainter oldDelegate) {
+    return basePosition != oldDelegate.basePosition ||
+           joystickPosition != oldDelegate.joystickPosition;
+  }
+}
+
+// Overlay per il HUD di gioco con timer
+class GameHudOverlay extends StatefulWidget {
+  final FishGame game;
+
+  const GameHudOverlay({super.key, required this.game});
+
+  @override
+  State<GameHudOverlay> createState() => _GameHudOverlayState();
+}
+
+class _GameHudOverlayState extends State<GameHudOverlay> {
+  late Timer _gameTimer;
+  int _elapsedSeconds = 0;
+  
+  @override
+  void initState() {
+    super.initState();
+    // Avvia il timer di gioco
+    _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        _elapsedSeconds++;
+      });
+    });
+  }
+  
+  @override
+  void dispose() {
+    _gameTimer.cancel();
+    super.dispose();
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    // Formatta il tempo trascorso in minuti:secondi
+    final minutes = _elapsedSeconds ~/ 60;
+    final seconds = _elapsedSeconds % 60;
+    final timeString = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    
+    return Positioned(
+      top: 10,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.lightBlueAccent.withOpacity(0.5), width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.timer,
+                color: Colors.white,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                timeString,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -410,129 +819,127 @@ class GameOverOverlay extends StatefulWidget {
 }
 
 class _GameOverOverlayState extends State<GameOverOverlay> {
-  bool _hoveringRetryButton = false;
+  bool _hoveringRestartButton = false;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.all(30),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.8), // Aumentato l'opacità
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.5),
-              blurRadius: 20,
-              spreadRadius: 5,
-            ),
-          ],
-        ),
+    return Container(
+      color: Colors.black.withOpacity(0.7),
+      child: Center(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Titolo Game Over senza animazione
+            // Game Over Text
             const Text(
               'GAME OVER',
               style: TextStyle(
-                fontSize: 48,
+                fontSize: 60,
                 fontWeight: FontWeight.bold,
                 color: Colors.red,
                 shadows: [
                   Shadow(
                     blurRadius: 10.0,
                     color: Colors.black,
-                    offset: Offset(3.0, 3.0),
+                    offset: Offset(5.0, 5.0),
                   ),
                 ],
               ),
+            ).animate().fadeIn(duration: 600.ms).scale(
+              begin: const Offset(0.5, 0.5),
+              end: const Offset(1.0, 1.0),
+              duration: 600.ms,
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 20),
             
-            // Punteggio senza animazione per assicurarsi che sia sempre visibile
+            // Score
             Text(
               'Punteggio: ${widget.game.score}',
               style: const TextStyle(
-                fontSize: 28,
-                color: Colors.yellow,
+                fontSize: 30,
                 fontWeight: FontWeight.bold,
-                shadows: [
-                  Shadow(
-                    blurRadius: 5.0,
-                    color: Colors.black,
-                    offset: Offset(2.0, 2.0),
-                  ),
-                ],
+                color: Colors.white,
               ),
-            ),
+            ).animate().fadeIn(duration: 600.ms, delay: 300.ms),
             const SizedBox(height: 40),
             
-            // Pulsante RIPROVA con effetto hover
+            // Restart Button
             MouseRegion(
-              onEnter: (_) => setState(() => _hoveringRetryButton = true),
-              onExit: (_) => setState(() => _hoveringRetryButton = false),
+              onEnter: (_) => setState(() => _hoveringRestartButton = true),
+              onExit: (_) => setState(() => _hoveringRestartButton = false),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                transform: _hoveringRetryButton 
+                transform: _hoveringRestartButton 
                   ? (Matrix4.identity()..scale(1.1))
                   : Matrix4.identity(),
-                child: ElevatedButton(
-                  onPressed: () {
-                    // Impostiamo il flag di interazione utente
-                    AudioManager.setUserInteracted();
-                    
-                    // Rimuoviamo l'overlay prima di resettare il gioco
-                    // Questo evita la doppia rimozione che potrebbe causare problemi
-                    widget.game.overlays.remove('gameOver');
-                    
-                    // Resettiamo il gioco dopo un breve ritardo per assicurarci
-                    // che l'overlay sia stato completamente rimosso
-                    Future.delayed(const Duration(milliseconds: 100), () {
-                      // Reset game
-                      widget.game.reset();
-                    });
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _hoveringRetryButton 
-                      ? Colors.green.shade400 
-                      : Colors.green.shade600,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                    textStyle: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    elevation: _hoveringRetryButton ? 15 : 10,
-                    shadowColor: Colors.black.withOpacity(0.5),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(30),
+                  child: Stack(
                     children: [
-                      const Text('RIPROVA'),
-                      const SizedBox(width: 10),
-                      Icon(
-                        Icons.refresh,
-                        size: 24,
-                        color: Colors.white,
-                      ).animate(
-                        onPlay: (controller) => controller.repeat(),
-                      ).rotate(
-                        duration: 1.5.seconds,
-                        begin: 0,
-                        end: 1,
+                      ElevatedButton(
+                        onPressed: () {
+                          widget.game.reset();
+                          
+                          // Riattiva l'HUD
+                          widget.game.overlays.add('gameHud');
+                          
+                          // Se siamo su mobile/tablet, riattiva i controlli touch
+                          if (MediaQuery.of(context).size.width < 768) {
+                            widget.game.overlays.add('touchControls');
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade700,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                          textStyle: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          elevation: _hoveringRestartButton ? 10 : 5,
+                          shadowColor: Colors.blue.shade900,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.replay, size: 30),
+                            const SizedBox(width: 10),
+                            const Text('RIPROVA'),
+                          ],
+                        ),
+                      ),
+                      
+                      // Effetto di brillantezza con la stessa forma arrotondata
+                      Positioned.fill(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(30),
+                          child: Container()
+                            .animate(
+                              onPlay: (controller) => controller.repeat(),
+                            )
+                            .shimmer(
+                              duration: 2000.ms,
+                              color: Colors.white.withOpacity(0.3),
+                              angle: 45,
+                              size: 1.5,
+                            ),
+                        ),
                       ),
                     ],
                   ),
                 ),
+              ).animate().fadeIn(duration: 600.ms, delay: 600.ms),
+            ),
+            
+            // Versione
+            Padding(
+              padding: const EdgeInsets.only(top: 40),
+              child: const Text(
+                'v1.2.0',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.white70,
+                ),
               ),
-            ).animate().scale(
-              begin: const Offset(0.5, 0.5),
-              end: const Offset(1, 1),
-              duration: 500.ms,
-              curve: Curves.elasticOut,
             ),
           ],
         ),

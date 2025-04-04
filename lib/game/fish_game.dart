@@ -21,13 +21,17 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   late PlayerFish player;
   final Random _random = Random();
   int score = 0;
-  int lives = 3;
+  
+  // Sistema di vita
+  double _health = 100.0; // Vita al 100%
+  
+  // Timer per lo spawn
   double _spawnTimer = 0;
   double _spawnInterval = 2.0; // Spawn enemy every 2 seconds
   
   // Timer per il polipetto
   double _octopusSpawnTimer = 0;
-  double _octopusSpawnInterval = 15.0; // Spawn octopus every 15 seconds (più raro)
+  double _octopusSpawnInterval = 10.0; // Spawn octopus every 10 seconds (più frequente)
   
   // Timer per le meduse
   double _jellyfishSpawnTimer = 0;
@@ -35,7 +39,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   
   // Timer per la murena elettrica
   double _eelSpawnTimer = 0;
-  double _eelSpawnInterval = 30.0; // Spawn electric eel every 30 seconds (molto rara all'inizio)
+  double _eelSpawnInterval = 20.0; // Spawn electric eel every 20 seconds (più frequente)
   
   // Timer per le bolle
   double _bubbleTimer = 0;
@@ -48,11 +52,8 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   
   // Parametri per la progressione della difficoltà
   double _baseEnemySpeed = 100.0;
-  double _maxEnemySpeed = 250.0;
+  double _maxEnemySpeed = 350.0; // Velocità massima aumentata
   int _maxJellyfishInSwarm = 3; // Inizia con branchi piccoli
-  
-  // Sistema di vita
-  double _health = 100.0; // Vita al 100%
   
   // Tempo di gioco
   double _gameTime = 0.0;
@@ -166,8 +167,8 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       _octopusSpawnTimer += dt;
       if (_octopusSpawnTimer >= _octopusSpawnInterval) {
         _octopusSpawnTimer = 0;
-        // 30% di probabilità di generare un polipetto
-        if (_random.nextDouble() < 0.3) {
+        // 40% di probabilità di generare un polipetto (aumentata)
+        if (_random.nextDouble() < 0.4) {
           _spawnOctopus();
         }
       }
@@ -188,7 +189,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       if (_eelSpawnTimer >= _eelSpawnInterval) {
         _eelSpawnTimer = 0;
         // Probabilità crescente in base al livello di difficoltà
-        double eelChance = 0.1 + (_difficultyLevel * 0.03);
+        double eelChance = 0.15 + (_difficultyLevel * 0.04); // Aumentata
         if (_random.nextDouble() < eelChance) {
           _spawnElectricEel();
         }
@@ -213,13 +214,13 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       _difficultyLevel++;
       
       // Aumenta la velocità dei nemici
-      _baseEnemySpeed = min(_baseEnemySpeed + 10.0, _maxEnemySpeed);
+      _baseEnemySpeed = min(_baseEnemySpeed + 15.0, _maxEnemySpeed); // Aumento più rapido
       
       // Riduci gli intervalli di spawn
-      _spawnInterval = max(_spawnInterval * 0.95, 0.8); // Minimo 0.8 secondi
-      _octopusSpawnInterval = max(_octopusSpawnInterval * 0.95, 10.0); // Minimo 10 secondi
-      _jellyfishSpawnInterval = max(_jellyfishSpawnInterval * 0.9, 10.0); // Minimo 10 secondi
-      _eelSpawnInterval = max(_eelSpawnInterval * 0.9, 15.0); // Minimo 15 secondi
+      _spawnInterval = max(_spawnInterval * 0.95, 0.7); // Minimo 0.7 secondi
+      _octopusSpawnInterval = max(_octopusSpawnInterval * 0.95, 8.0); // Minimo 8 secondi
+      _jellyfishSpawnInterval = max(_jellyfishSpawnInterval * 0.9, 8.0); // Minimo 8 secondi
+      _eelSpawnInterval = max(_eelSpawnInterval * 0.9, 10.0); // Minimo 10 secondi
       
       // Aumenta la dimensione dei branchi di meduse
       _maxJellyfishInSwarm = min(_maxJellyfishInSwarm + 1, 12); // Massimo 12 meduse
@@ -269,7 +270,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     try {
       developer.log('FishGame: generazione polipetto');
       
-      // Calcola la velocità in base al livello di difficoltà (velocità variabile)
+      // Calcola la velocità in base al livello di difficoltà
       double speedVariation = _random.nextDouble() * 20.0 - 10.0; // ±10
       double octopusSpeed = _baseEnemySpeed * 0.8 + speedVariation; // Più lento dei pesci
       
@@ -309,8 +310,8 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         double offsetY = _random.nextDouble() * 100 - 50; // ±50
         double offsetX = _random.nextDouble() * 150; // 0-150 (distanza orizzontale tra meduse)
         
-        // Varia leggermente la dimensione di ogni medusa
-        double sizeMultiplier = 4.0 + _random.nextDouble() * 3.0; // Da 4x a 7x
+        // Varia leggermente la dimensione di ogni medusa (aumentata a 8-11x)
+        double sizeMultiplier = 8.0 + _random.nextDouble() * 3.0; // Da 8x a 11x
         
         final jellyfish = JellyfishEnemy(
           position: Vector2(
@@ -340,8 +341,8 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       // Posizione Y casuale per la murena
       double posY = _random.nextDouble() * (size.y - 150) + 75;
       
-      // Dimensione della murena (6-7 volte un pesce rosso)
-      double sizeMultiplier = 6.0 + _random.nextDouble(); // Da 6x a 7x
+      // Dimensione della murena (12-14 volte un pesce rosso, raddoppiata)
+      double sizeMultiplier = 12.0 + _random.nextDouble() * 2.0; // Da 12x a 14x
       
       final eel = ElectricEelEnemy(
         position: Vector2(
@@ -388,15 +389,6 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   void increaseScore() {
     score++;
     AudioManager.playEatSound(); // Usa il metodo esistente
-  }
-  
-  void decreaseLives() {
-    lives--;
-    AudioManager.playHurtSound(); // Usa il metodo esistente
-    
-    if (lives <= 0) {
-      _gameOver();
-    }
   }
   
   // Metodi per gestire la salute del giocatore
@@ -457,7 +449,6 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       
       // Resetta lo stato del gioco
       score = 0;
-      lives = 3;
       _spawnTimer = 0;
       _octopusSpawnTimer = 0;
       _jellyfishSpawnTimer = 0;
