@@ -1,15 +1,9 @@
-name: Deploy to GitHub Pages
+name: Gh-Pages
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
-
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
-permissions:
-  contents: write
-  pages: write
-  id-token: write
 
 jobs:
   build:
@@ -18,18 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: subosito/flutter-action@v2
+      - uses: bluefireteam/flutter-gh-pages@v8
         with:
-          flutter-version: '3.x'
-          channel: 'stable'
-      
-      - name: Install dependencies
-        run: flutter pub get
-        
-      - name: Build web
-        run: flutter build web --release
-        
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build/web
+          baseHref: /pescivendolo/
+          webRenderer: canvaskit
