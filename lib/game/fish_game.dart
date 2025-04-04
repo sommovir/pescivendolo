@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:pescivendolo_game/game/audio_manager.dart';
 import 'package:pescivendolo_game/game/components/player_fish.dart';
 import 'package:pescivendolo_game/game/components/enemy_fish.dart';
+import 'package:pescivendolo_game/game/components/octopus_enemy.dart';
 import 'package:pescivendolo_game/game/components/hud.dart';
 
 class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
@@ -17,7 +18,15 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   int lives = 3;
   double _spawnTimer = 0;
   final double _spawnInterval = 2.0; // Spawn enemy every 2 seconds
+  
+  // Timer per il polipetto
+  double _octopusSpawnTimer = 0;
+  final double _octopusSpawnInterval = 5.0; // Spawn octopus every 5 seconds
+  
   late Hud hud;
+  
+  // Flag per indicare se il gioco è iniziato
+  bool _gameStarted = false;
   
   // Tasti premuti
   final Set<LogicalKeyboardKey> _keysPressed = {};
@@ -45,17 +54,45 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       hud = Hud();
       add(hud);
       
-      developer.log('FishGame: creazione primo nemico');
-      // Inizializza il primo nemico
-      _spawnEnemy();
+      // Mostra l'overlay di avvio
+      overlays.add('startGame');
+      
+      // Pausa il gioco fino a quando l'utente non preme il pulsante Start
+      pauseEngine();
+      
+      developer.log('FishGame: onLoad completato con successo');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame.onLoad: $e\n$stackTrace');
+    }
+  }
+  
+  // Metodo per avviare il gioco
+  void startGame() {
+    try {
+      developer.log('FishGame: avvio del gioco');
+      
+      // Rimuovi l'overlay di avvio
+      overlays.remove('startGame');
+      
+      // Imposta il flag di interazione utente per l'audio
+      AudioManager.setUserInteracted();
       
       // Avvia la musica di sottofondo e il suono ambientale
       AudioManager.playBackgroundMusic();
       AudioManager.playAmbientSound();
       
-      developer.log('FishGame: onLoad completato con successo');
+      // Genera il primo nemico
+      _spawnEnemy();
+      
+      // Imposta il flag di gioco iniziato
+      _gameStarted = true;
+      
+      // Riprendi il motore di gioco
+      resumeEngine();
+      
+      developer.log('FishGame: gioco avviato con successo');
     } catch (e, stackTrace) {
-      developer.log('Errore in FishGame.onLoad: $e\n$stackTrace');
+      developer.log('Errore in FishGame.startGame: $e\n$stackTrace');
     }
   }
 
@@ -63,6 +100,9 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   void update(double dt) {
     try {
       super.update(dt);
+      
+      // Se il gioco non è ancora iniziato, non fare nulla
+      if (!_gameStarted) return;
       
       // Aggiorna i controlli del giocatore in base ai tasti premuti
       _updatePlayerControls();
@@ -72,6 +112,16 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       if (_spawnTimer >= _spawnInterval) {
         _spawnTimer = 0;
         _spawnEnemy();
+      }
+      
+      // Genera polipetti a intervalli più lunghi
+      _octopusSpawnTimer += dt;
+      if (_octopusSpawnTimer >= _octopusSpawnInterval) {
+        _octopusSpawnTimer = 0;
+        // 30% di probabilità di generare un polipetto
+        if (_random.nextDouble() < 0.3) {
+          _spawnOctopus();
+        }
       }
     } catch (e, stackTrace) {
       developer.log('Errore in FishGame.update: $e\n$stackTrace');
@@ -109,6 +159,23 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       developer.log('Errore in FishGame._spawnEnemy: $e\n$stackTrace');
     }
   }
+  
+  void _spawnOctopus() {
+    try {
+      developer.log('FishGame: generazione polipetto');
+      // Crea un polipetto sul fondale sul lato destro dello schermo
+      final octopus = OctopusEnemy(
+        position: Vector2(
+          size.x + 50, // Inizia fuori dallo schermo a destra
+          size.y * 0.85, // Posizione Y fissa sul fondale
+        ),
+      );
+      add(octopus);
+      developer.log('FishGame: polipetto generato con successo');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame._spawnOctopus: $e\n$stackTrace');
+    }
+  }
 
   void increaseScore() {
     score++;
@@ -128,47 +195,55 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   }
 
   void reset() {
-    // Reimposta lo stato del gioco
-    score = 0;
-    lives = 3;
-    _spawnTimer = 0;
-    
-    // Rimuovi tutti i nemici
-    children.whereType<EnemyFish>().forEach((enemy) => enemy.removeFromParent());
-    
-    // Reimposta la posizione del giocatore
-    player.position = Vector2(100, 300);
-    
-    // Riprendi il gioco
-    resumeEngine();
-    
-    // Riavvia la musica di sottofondo e il suono ambientale
-    AudioManager.playBackgroundMusic();
-    AudioManager.playAmbientSound();
-  }
-
-  @override
-  KeyEventResult onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
     try {
-      // Aggiorna il set di tasti premuti
-      if (event is KeyDownEvent) {
-        _keysPressed.add(event.logicalKey);
-        developer.log('Tasto premuto: ${event.logicalKey}');
-      } else if (event is KeyUpEvent) {
-        _keysPressed.remove(event.logicalKey);
-        developer.log('Tasto rilasciato: ${event.logicalKey}');
-      }
+      developer.log('FishGame: reset del gioco');
+      
+      // Rimuovi l'overlay di game over
+      overlays.remove('gameOver');
+      
+      // Reimposta lo stato del gioco
+      score = 0;
+      lives = 3;
+      _spawnTimer = 0;
+      _octopusSpawnTimer = 0;
+      
+      // Rimuovi tutti i nemici esistenti
+      children.whereType<EnemyFish>().forEach((enemy) {
+        developer.log('FishGame: rimozione pesce nemico');
+        enemy.removeFromParent();
+      });
+      
+      children.whereType<OctopusEnemy>().forEach((octopus) {
+        developer.log('FishGame: rimozione polipetto');
+        octopus.removeFromParent();
+      });
+      
+      // Reimposta la posizione del giocatore
+      player.position = Vector2(100, 300);
+      developer.log('FishGame: posizione del giocatore reimpostata');
+      
+      // Ferma tutti i suoni
+      AudioManager.stopAll();
+      
+      // Riavvia la musica e i suoni ambientali
+      AudioManager.playBackgroundMusic();
+      AudioManager.playAmbientSound();
+      
+      // Genera un nuovo nemico per iniziare
+      _spawnEnemy();
+      
+      // Riprendi il motore di gioco
+      resumeEngine();
+      developer.log('FishGame: motore di gioco ripreso');
     } catch (e, stackTrace) {
-      developer.log('Errore in FishGame.onKeyEvent: $e\n$stackTrace');
+      developer.log('Errore in FishGame.reset: $e\n$stackTrace');
     }
-    
-    return KeyEventResult.handled;
   }
   
   @override
-  void onRemove() {
-    // Ferma tutti i suoni quando il gioco viene rimosso
-    AudioManager.stopAll();
-    super.onRemove();
+  KeyEventResult onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
+    _keysPressed.clear();
+    _keysPressed.addAll(keysPressed);
+    return KeyEventResult.handled;
   }
 }

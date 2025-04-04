@@ -3,6 +3,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'dart:developer' as developer;
 import 'package:pescivendolo_game/game/components/enemy_fish.dart';
+import 'package:pescivendolo_game/game/components/octopus_enemy.dart';
 import 'package:pescivendolo_game/game/fish_game.dart';
 
 class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<FishGame> {
@@ -90,13 +91,20 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
       if (other is EnemyFish) {
         if (other.isDangerous) {
           // Il giocatore è stato colpito da un pesce pericoloso
+          developer.log('PlayerFish: collisione con pesce pericoloso');
           gameRef.decreaseLives();
           other.removeFromParent();
         } else {
           // Il giocatore ha mangiato un pesce sicuro
+          developer.log('PlayerFish: collisione con pesce sicuro');
           gameRef.increaseScore();
           other.removeFromParent();
         }
+      } else if (other is OctopusEnemy) {
+        // Il polipetto è sempre pericoloso
+        developer.log('PlayerFish: collisione con polipetto');
+        gameRef.decreaseLives();
+        other.removeFromParent();
       }
     } catch (e, stackTrace) {
       developer.log('Errore in PlayerFish.onCollision: $e\n$stackTrace');
