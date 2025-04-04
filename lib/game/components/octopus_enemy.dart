@@ -5,11 +5,14 @@ import 'dart:developer' as developer;
 import 'package:pescivendolo_game/game/fish_game.dart';
 
 class OctopusEnemy extends SpriteComponent with CollisionCallbacks, HasGameRef<FishGame> {
-  // Il polipetto è sempre pericoloso
-  final bool isDangerous = true;
+  // Il polipetto ora è amichevole
+  final bool isFriendly = true;
   
-  // Velocità maggiore rispetto ai pesci normali
-  final double _speed = 180.0; // 80% più veloce dei pesci normali
+  // Velocità del polipetto
+  double speed = 180.0;
+  
+  // Quantità di vita che cura
+  final double healAmount = 10.0; // Cura 10% di vita
   
   OctopusEnemy({
     required Vector2 position,
@@ -52,8 +55,8 @@ class OctopusEnemy extends SpriteComponent with CollisionCallbacks, HasGameRef<F
     try {
       super.update(dt);
       
-      // Muovi il polipetto verso sinistra più velocemente
-      position.x -= _speed * dt;
+      // Muovi il polipetto verso sinistra
+      position.x -= speed * dt;
       
       // Mantieni il polipetto sul fondale (parte bassa dello schermo)
       position.y = gameRef.size.y * 0.85; // Posiziona vicino al fondale

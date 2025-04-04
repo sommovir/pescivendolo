@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'dart:developer' as developer;
 import 'package:pescivendolo_game/game/components/enemy_fish.dart';
 import 'package:pescivendolo_game/game/components/octopus_enemy.dart';
+import 'package:pescivendolo_game/game/components/jellyfish_enemy.dart';
+import 'package:pescivendolo_game/game/components/electric_eel_enemy.dart';
 import 'package:pescivendolo_game/game/fish_game.dart';
 
 class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<FishGame> {
@@ -92,18 +94,29 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
         if (other.isDangerous) {
           // Il giocatore è stato colpito da un pesce pericoloso
           developer.log('PlayerFish: collisione con pesce pericoloso');
-          gameRef.decreaseLives();
+          gameRef.decreaseHealth(other.damageAmount);
           other.removeFromParent();
         } else {
           // Il giocatore ha mangiato un pesce sicuro
           developer.log('PlayerFish: collisione con pesce sicuro');
           gameRef.increaseScore();
+          gameRef.increaseHealth(other.healAmount);
           other.removeFromParent();
         }
       } else if (other is OctopusEnemy) {
-        // Il polipetto è sempre pericoloso
-        developer.log('PlayerFish: collisione con polipetto');
-        gameRef.decreaseLives();
+        // Il polipetto ora è amichevole e cura il giocatore
+        developer.log('PlayerFish: collisione con polipetto amichevole');
+        gameRef.increaseHealth(other.healAmount);
+        other.removeFromParent();
+      } else if (other is JellyfishEnemy) {
+        // La medusa è pericolosa e toglie il 10% di vita
+        developer.log('PlayerFish: collisione con medusa');
+        gameRef.decreaseHealth(other.damageAmount);
+        other.removeFromParent();
+      } else if (other is ElectricEelEnemy) {
+        // La murena elettrica è molto pericolosa e toglie il 25% di vita
+        developer.log('PlayerFish: collisione con murena elettrica');
+        gameRef.decreaseHealth(other.damageAmount);
         other.removeFromParent();
       }
     } catch (e, stackTrace) {

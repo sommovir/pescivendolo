@@ -12,6 +12,8 @@ import 'package:pescivendolo_game/game/audio_manager.dart';
 import 'package:pescivendolo_game/game/components/player_fish.dart';
 import 'package:pescivendolo_game/game/components/enemy_fish.dart';
 import 'package:pescivendolo_game/game/components/octopus_enemy.dart';
+import 'package:pescivendolo_game/game/components/jellyfish_enemy.dart';
+import 'package:pescivendolo_game/game/components/electric_eel_enemy.dart';
 import 'package:pescivendolo_game/game/components/hud.dart';
 import 'package:pescivendolo_game/game/components/water_background.dart';
 
@@ -21,15 +23,42 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   int score = 0;
   int lives = 3;
   double _spawnTimer = 0;
-  final double _spawnInterval = 2.0; // Spawn enemy every 2 seconds
+  double _spawnInterval = 2.0; // Spawn enemy every 2 seconds
   
   // Timer per il polipetto
   double _octopusSpawnTimer = 0;
-  final double _octopusSpawnInterval = 5.0; // Spawn octopus every 5 seconds
+  double _octopusSpawnInterval = 15.0; // Spawn octopus every 15 seconds (più raro)
+  
+  // Timer per le meduse
+  double _jellyfishSpawnTimer = 0;
+  double _jellyfishSpawnInterval = 20.0; // Spawn jellyfish every 20 seconds (inizialmente rare)
+  
+  // Timer per la murena elettrica
+  double _eelSpawnTimer = 0;
+  double _eelSpawnInterval = 30.0; // Spawn electric eel every 30 seconds (molto rara all'inizio)
   
   // Timer per le bolle
   double _bubbleTimer = 0;
   final double _bubbleInterval = 0.5; // Genera bolle ogni 0.5 secondi
+  
+  // Timer per aumentare la difficoltà
+  double _difficultyTimer = 0;
+  final double _difficultyInterval = 30.0; // Aumenta difficoltà ogni 30 secondi
+  int _difficultyLevel = 1;
+  
+  // Parametri per la progressione della difficoltà
+  double _baseEnemySpeed = 100.0;
+  double _maxEnemySpeed = 250.0;
+  int _maxJellyfishInSwarm = 3; // Inizia con branchi piccoli
+  
+  // Sistema di vita
+  double _health = 100.0; // Vita al 100%
+  
+  // Tempo di gioco
+  double _gameTime = 0.0;
+  
+  // Getter pubblico per il tempo di gioco
+  double get gameTime => _gameTime;
   
   late Hud hud;
   
@@ -117,8 +146,14 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       // Se il gioco non è ancora iniziato, non fare nulla
       if (!_gameStarted) return;
       
+      // Aggiorna il tempo di gioco
+      _gameTime += dt;
+      
       // Aggiorna i controlli del giocatore in base ai tasti premuti
       _updatePlayerControls();
+      
+      // Aggiorna la difficoltà del gioco
+      _updateDifficulty(dt);
       
       // Genera nemici a intervalli
       _spawnTimer += dt;
@@ -137,6 +172,28 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         }
       }
       
+      // Genera meduse a intervalli
+      _jellyfishSpawnTimer += dt;
+      if (_jellyfishSpawnTimer >= _jellyfishSpawnInterval) {
+        _jellyfishSpawnTimer = 0;
+        // Probabilità crescente in base al livello di difficoltà
+        double jellyfishChance = 0.2 + (_difficultyLevel * 0.05);
+        if (_random.nextDouble() < jellyfishChance) {
+          _spawnJellyfishSwarm();
+        }
+      }
+      
+      // Genera murene elettriche a intervalli
+      _eelSpawnTimer += dt;
+      if (_eelSpawnTimer >= _eelSpawnInterval) {
+        _eelSpawnTimer = 0;
+        // Probabilità crescente in base al livello di difficoltà
+        double eelChance = 0.1 + (_difficultyLevel * 0.03);
+        if (_random.nextDouble() < eelChance) {
+          _spawnElectricEel();
+        }
+      }
+      
       // Genera bolle a intervalli regolari
       _bubbleTimer += dt;
       if (_bubbleTimer >= _bubbleInterval) {
@@ -145,6 +202,27 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       }
     } catch (e, stackTrace) {
       developer.log('Errore in FishGame.update: $e\n$stackTrace');
+    }
+  }
+  
+  void _updateDifficulty(double dt) {
+    // Aumenta la difficoltà nel tempo
+    _difficultyTimer += dt;
+    if (_difficultyTimer >= _difficultyInterval) {
+      _difficultyTimer = 0;
+      _difficultyLevel++;
+      
+      // Aumenta la velocità dei nemici
+      _baseEnemySpeed = min(_baseEnemySpeed + 10.0, _maxEnemySpeed);
+      
+      // Riduci gli intervalli di spawn
+      _spawnInterval = max(_spawnInterval * 0.95, 0.8); // Minimo 0.8 secondi
+      _octopusSpawnInterval = max(_octopusSpawnInterval * 0.95, 10.0); // Minimo 10 secondi
+      _jellyfishSpawnInterval = max(_jellyfishSpawnInterval * 0.9, 10.0); // Minimo 10 secondi
+      _eelSpawnInterval = max(_eelSpawnInterval * 0.9, 15.0); // Minimo 15 secondi
+      
+      // Aumenta la dimensione dei branchi di meduse
+      _maxJellyfishInSwarm = min(_maxJellyfishInSwarm + 1, 12); // Massimo 12 meduse
     }
   }
   
@@ -166,6 +244,12 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   void _spawnEnemy() {
     try {
       developer.log('FishGame: generazione nemico');
+      
+      // Calcola la velocità in base al livello di difficoltà
+      // Aggiungi un po' di casualità alla velocità
+      double speedVariation = _random.nextDouble() * 30.0 - 15.0; // ±15
+      double enemySpeed = _baseEnemySpeed + speedVariation;
+      
       // Crea pesci nemici in posizioni Y casuali sul lato destro dello schermo
       final enemyFish = EnemyFish(
         position: Vector2(
@@ -173,6 +257,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
           _random.nextDouble() * (size.y - 100) + 50, // Posizione Y casuale
         ),
         isDangerous: _random.nextBool(), // 50% di probabilità di essere pericoloso
+        speed: enemySpeed,
       );
       add(enemyFish);
     } catch (e, stackTrace) {
@@ -183,6 +268,11 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   void _spawnOctopus() {
     try {
       developer.log('FishGame: generazione polipetto');
+      
+      // Calcola la velocità in base al livello di difficoltà (velocità variabile)
+      double speedVariation = _random.nextDouble() * 20.0 - 10.0; // ±10
+      double octopusSpeed = _baseEnemySpeed * 0.8 + speedVariation; // Più lento dei pesci
+      
       // Crea un polipetto sul fondale sul lato destro dello schermo
       final octopus = OctopusEnemy(
         position: Vector2(
@@ -190,6 +280,8 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
           size.y * 0.85, // Posizione Y fissa sul fondale
         ),
       );
+      // Imposta la velocità del polipetto
+      octopus.speed = octopusSpeed;
       add(octopus);
       developer.log('FishGame: polipetto generato con successo');
     } catch (e, stackTrace) {
@@ -197,16 +289,88 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     }
   }
   
+  void _spawnJellyfishSwarm() {
+    try {
+      developer.log('FishGame: generazione branco di meduse');
+      
+      // Determina la dimensione del branco in base al livello di difficoltà
+      int swarmSize = 2 + _random.nextInt(_maxJellyfishInSwarm - 1);
+      
+      // Calcola la velocità base per questo branco (le meduse sono lente)
+      double speedVariation = _random.nextDouble() * 20.0 - 10.0; // ±10
+      double jellyfishSpeed = (_baseEnemySpeed * 0.7) + speedVariation;
+      
+      // Posizione Y di base per il branco
+      double baseY = _random.nextDouble() * (size.y - 200) + 100;
+      
+      // Genera il branco di meduse
+      for (int i = 0; i < swarmSize; i++) {
+        // Varia leggermente la posizione Y e X per ogni medusa
+        double offsetY = _random.nextDouble() * 100 - 50; // ±50
+        double offsetX = _random.nextDouble() * 150; // 0-150 (distanza orizzontale tra meduse)
+        
+        // Varia leggermente la dimensione di ogni medusa
+        double sizeMultiplier = 4.0 + _random.nextDouble() * 3.0; // Da 4x a 7x
+        
+        final jellyfish = JellyfishEnemy(
+          position: Vector2(
+            size.x + 50 + offsetX, // Inizia fuori dallo schermo a destra
+            baseY + offsetY, // Posizione Y variabile attorno alla base
+          ),
+          speed: jellyfishSpeed,
+          sizeMultiplier: sizeMultiplier,
+        );
+        add(jellyfish);
+      }
+      
+      developer.log('FishGame: branco di $swarmSize meduse generato con successo');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame._spawnJellyfishSwarm: $e\n$stackTrace');
+    }
+  }
+  
+  void _spawnElectricEel() {
+    try {
+      developer.log('FishGame: generazione murena elettrica');
+      
+      // Calcola la velocità in base al livello di difficoltà (velocità variabile)
+      double speedVariation = _random.nextDouble() * 40.0 - 20.0; // ±20
+      double eelSpeed = _baseEnemySpeed + speedVariation;
+      
+      // Posizione Y casuale per la murena
+      double posY = _random.nextDouble() * (size.y - 150) + 75;
+      
+      // Dimensione della murena (6-7 volte un pesce rosso)
+      double sizeMultiplier = 6.0 + _random.nextDouble(); // Da 6x a 7x
+      
+      final eel = ElectricEelEnemy(
+        position: Vector2(
+          size.x + 50, // Inizia fuori dallo schermo a destra
+          posY, // Posizione Y casuale
+        ),
+        speed: eelSpeed,
+        sizeMultiplier: sizeMultiplier,
+      );
+      add(eel);
+      
+      developer.log('FishGame: murena elettrica generata con successo');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame._spawnElectricEel: $e\n$stackTrace');
+    }
+  }
+  
   void _spawnBubble() {
     try {
       // Crea una bolla in una posizione casuale sul fondo dello schermo
-      final bubbleSize = _random.nextDouble() * 15 + 5; // Dimensione casuale tra 5 e 20
-      final bubbleX = _random.nextDouble() * size.x;
-      final bubbleY = size.y + bubbleSize;
-      
       final bubble = BubbleComponent(
-        position: Vector2(bubbleX, bubbleY),
-        size: Vector2(bubbleSize, bubbleSize),
+        position: Vector2(
+          _random.nextDouble() * size.x,
+          size.y + 10, // Inizia appena sotto il bordo inferiore
+        ),
+        size: Vector2(
+          _random.nextDouble() * 10 + 5, // Dimensione casuale tra 5 e 15
+          _random.nextDouble() * 10 + 5,
+        ),
       );
       add(bubble);
     } catch (e, stackTrace) {
@@ -214,23 +378,51 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     }
   }
 
+  @override
+  KeyEventResult onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
+    _keysPressed.clear();
+    _keysPressed.addAll(keysPressed);
+    return KeyEventResult.handled;
+  }
+  
   void increaseScore() {
     score++;
-    // Riproduci suono quando mangia un pesce
-    AudioManager.playEatSound();
+    AudioManager.playEatSound(); // Usa il metodo esistente
   }
-
+  
   void decreaseLives() {
     lives--;
-    // Riproduci suono quando viene ferito
-    AudioManager.playHurtSound();
+    AudioManager.playHurtSound(); // Usa il metodo esistente
     
     if (lives <= 0) {
-      overlays.add('gameOver');
-      pauseEngine();
+      _gameOver();
     }
   }
-
+  
+  // Metodi per gestire la salute del giocatore
+  double get health => _health;
+  
+  void decreaseHealth(double amount) {
+    _health = max(0, _health - amount);
+    AudioManager.playHurtSound(); // Usa il metodo esistente
+    
+    if (_health <= 0) {
+      // Quando la salute arriva a zero, il giocatore perde
+      _gameOver();
+    }
+  }
+  
+  void increaseHealth(double amount) {
+    _health = min(100, _health + amount);
+    AudioManager.playEatSound(); // Usa il metodo esistente
+  }
+  
+  void _gameOver() {
+    overlays.add('gameOver');
+    pauseEngine();
+  }
+  
+  // Aggiungiamo il metodo reset che era presente nella versione precedente
   void reset() {
     try {
       developer.log('FishGame: reset del gioco');
@@ -249,6 +441,16 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         octopus.removeFromParent();
       });
       
+      children.whereType<JellyfishEnemy>().forEach((jellyfish) {
+        developer.log('FishGame: rimozione medusa');
+        jellyfish.removeFromParent();
+      });
+      
+      children.whereType<ElectricEelEnemy>().forEach((eel) {
+        developer.log('FishGame: rimozione murena elettrica');
+        eel.removeFromParent();
+      });
+      
       children.whereType<BubbleComponent>().forEach((bubble) {
         bubble.removeFromParent();
       });
@@ -258,7 +460,15 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       lives = 3;
       _spawnTimer = 0;
       _octopusSpawnTimer = 0;
+      _jellyfishSpawnTimer = 0;
+      _eelSpawnTimer = 0;
       _bubbleTimer = 0;
+      _difficultyTimer = 0;
+      _difficultyLevel = 1;
+      _baseEnemySpeed = 100.0;
+      _maxJellyfishInSwarm = 3;
+      _health = 100.0;
+      _gameTime = 0.0;
       
       // Se il giocatore è stato rimosso, ricrealo
       if (!children.contains(player)) {
@@ -290,13 +500,6 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     } catch (e, stackTrace) {
       developer.log('Errore in FishGame.reset: $e\n$stackTrace');
     }
-  }
-  
-  @override
-  KeyEventResult onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
-    _keysPressed.clear();
-    _keysPressed.addAll(keysPressed);
-    return KeyEventResult.handled;
   }
 }
 

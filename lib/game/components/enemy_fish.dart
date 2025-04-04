@@ -6,11 +6,16 @@ import 'package:pescivendolo_game/game/fish_game.dart';
 
 class EnemyFish extends SpriteComponent with CollisionCallbacks, HasGameRef<FishGame> {
   final bool isDangerous;
-  final double _speed = 100.0;
+  final double speed;
+  
+  // Quantità di danno o cura
+  final double damageAmount = 0.5; // Toglie 0.5% di vita
+  final double healAmount = 0.1; // Cura 0.1% di vita
   
   EnemyFish({
     required Vector2 position,
     required this.isDangerous,
+    required this.speed,
   }) : super(
       size: isDangerous 
           ? Vector2(70, 50)  // Dimensione pesce pericoloso
@@ -55,8 +60,8 @@ class EnemyFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fish
     try {
       super.update(dt);
       
-      // Muovi da destra a sinistra
-      position.x -= _speed * dt;
+      // Muovi da destra a sinistra con la velocità specificata
+      position.x -= speed * dt;
       
       // Rimuovi se fuori dallo schermo
       if (position.x < -size.x) {
