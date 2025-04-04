@@ -27,6 +27,9 @@ class AudioManager {
   // Nome del file per la musica di sottofondo
   static const String musicFile = 'music.wav';
   
+  // Nome del file per il suono della scarica elettrica
+  static const String electroShockFile = 'electro_shock.wav';
+  
   // Durata approssimativa del file musicale in secondi
   // Questo valore deve essere regolato in base alla durata effettiva del file
   static const int musicDurationSeconds = 60;
@@ -36,6 +39,7 @@ class AudioManager {
   static bool _hurtSoundAvailable = false;
   static bool _musicAvailable = false;
   static bool _ambientSoundAvailable = false;
+  static bool _electroShockAvailable = false;
   
   // Variabili per limitare la riproduzione troppo frequente
   static DateTime _lastEatSound = DateTime.now().subtract(const Duration(seconds: 1));
@@ -97,10 +101,19 @@ class AudioManager {
         developer.log('AudioManager: ERRORE caricamento eatSoundFile: $e\n$stackTrace');
       }
       
+      try {
+        developer.log('AudioManager: caricamento electroShockFile: $electroShockFile');
+        await FlameAudio.audioCache.load(electroShockFile);
+        _electroShockAvailable = true;
+        developer.log('AudioManager: electroShockFile caricato con successo');
+      } catch (e, stackTrace) {
+        developer.log('AudioManager: ERRORE caricamento electroShockFile: $e\n$stackTrace');
+      }
+      
       _initialized = true;
       developer.log('AudioManager: inizializzazione completata. Suoni disponibili: '
           'music=$_musicAvailable, ambient=$_ambientSoundAvailable, '
-          'hurt=$_hurtSoundAvailable, eat=$_eatSoundAvailable');
+          'hurt=$_hurtSoundAvailable, eat=$_eatSoundAvailable, electroShock=$_electroShockAvailable');
     } catch (e, stackTrace) {
       developer.log('Errore in AudioManager.initialize: $e\n$stackTrace');
     }

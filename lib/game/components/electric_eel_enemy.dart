@@ -80,23 +80,25 @@ class ElectricEelEnemy extends SpriteComponent with CollisionCallbacks, HasGameR
       developer.log('ElectricEelEnemy: dimensioni della spritesheet: ${spritesheet.width}x${spritesheet.height}');
       
       // Crea l'animazione della scarica elettrica
-      final spriteSize = Vector2(spritesheet.width / 4, spritesheet.height.toDouble());
+      final spriteSize = Vector2(spritesheet.width / 2, spritesheet.height / 2);
+      developer.log('ElectricEelEnemy: dimensione di ogni sprite: ${spriteSize.x}x${spriteSize.y}');
       
-      final shockAnimation = SpriteAnimation.fromFrameData(
-        spritesheet,
-        SpriteAnimationData.sequenced(
-          amount: 4,
-          stepTime: 0.2,
-          textureSize: spriteSize,
-          loop: true,
-        ),
-      );
+      // Crea un array di 4 sprites, uno per ogni angolo della spritesheet
+      final sprites = [
+        Sprite(spritesheet, srcPosition: Vector2(0, 0), srcSize: spriteSize),                 // Top-left
+        Sprite(spritesheet, srcPosition: Vector2(spriteSize.x, 0), srcSize: spriteSize),      // Top-right
+        Sprite(spritesheet, srcPosition: Vector2(0, spriteSize.y), srcSize: spriteSize),      // Bottom-left
+        Sprite(spritesheet, srcPosition: Vector2(spriteSize.x, spriteSize.y), srcSize: spriteSize), // Bottom-right
+      ];
       
-      // Crea il componente per l'animazione della scarica
       _shockAnimation = SpriteAnimationComponent(
-        animation: shockAnimation,
+        animation: SpriteAnimation.spriteList(
+          sprites,
+          stepTime: 0.1, // 100ms per frame
+        ),
         size: Vector2(shockRadius * 2, shockRadius * 2),
         anchor: Anchor.center,
+        position: Vector2(size.x / 2, size.y / 2),
       );
       
       // Calcola la posizione corretta dell'animazione
@@ -264,7 +266,7 @@ class ElectricEelEnemy extends SpriteComponent with CollisionCallbacks, HasGameR
       
       // Riproduci il suono di scarica elettrica
       developer.log('ElectricEelEnemy: riproduzione audio della scarica');
-      AudioManager.playSoundEffect('electro_shock.wav', volume: 2.0);
+      AudioManager.playSoundEffect(AudioManager.electroShockFile, volume: 2.0);
       
       // Applica il danno ai pesci vicini
       _applyShockDamage();
