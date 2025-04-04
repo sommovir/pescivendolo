@@ -52,8 +52,10 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       // Imposta lo sfondo blu per rappresentare l'acqua
       camera.viewfinder.visibleGameSize = Vector2(800, 600);
       
-      // Aggiungi lo sfondo acquatico
-      add(WaterBackgroundComponent());
+      // Aggiungi lo sfondo acquatico come primo componente
+      // per assicurarsi che copra l'intero schermo
+      final waterBackground = WaterBackgroundComponent();
+      add(waterBackground);
       
       developer.log('FishGame: creazione player');
       // Aggiungi il pesce giocatore
@@ -233,15 +235,8 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     try {
       developer.log('FishGame: reset del gioco');
       
-      // Rimuovi l'overlay di game over
-      overlays.remove('gameOver');
-      
-      // Reimposta lo stato del gioco
-      score = 0;
-      lives = 3;
-      _spawnTimer = 0;
-      _octopusSpawnTimer = 0;
-      _bubbleTimer = 0;
+      // Ferma tutti gli audio in corso prima di qualsiasi altra operazione
+      AudioManager.stopAll();
       
       // Rimuovi tutti i nemici esistenti
       children.whereType<EnemyFish>().forEach((enemy) {
@@ -258,23 +253,40 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         bubble.removeFromParent();
       });
       
-      // Reimposta la posizione del giocatore
-      player.position = Vector2(100, 300);
-      developer.log('FishGame: posizione del giocatore reimpostata');
+      // Resetta lo stato del gioco
+      score = 0;
+      lives = 3;
+      _spawnTimer = 0;
+      _octopusSpawnTimer = 0;
+      _bubbleTimer = 0;
       
-      // Ferma tutti i suoni
-      AudioManager.stopAll();
+      // Se il giocatore è stato rimosso, ricrealo
+      if (!children.contains(player)) {
+        player = PlayerFish();
+        add(player);
+        developer.log('FishGame: creato nuovo giocatore');
+      } else {
+        // Altrimenti, reimposta solo la posizione
+        player.position = Vector2(100, 300);
+        developer.log('FishGame: posizione del giocatore reimpostata');
+      }
       
-      // Riavvia la musica e i suoni ambientali
-      AudioManager.playBackgroundMusic();
-      AudioManager.playAmbientSound();
+      // Rimuovi l'overlay di game over se presente
+      overlays.remove('gameOver');
+      
+      // Riavvia la musica e i suoni ambientali dopo un breve ritardo
+      // per assicurarsi che l'audio precedente sia completamente fermato
+      Future.delayed(const Duration(milliseconds: 500), () {
+        AudioManager.playBackgroundMusic();
+        AudioManager.playAmbientSound();
+      });
       
       // Genera un nuovo nemico per iniziare
       _spawnEnemy();
       
       // Riprendi il motore di gioco
       resumeEngine();
-      developer.log('FishGame: motore di gioco ripreso');
+      developer.log('FishGame: motore di gioco ripreso con successo');
     } catch (e, stackTrace) {
       developer.log('Errore in FishGame.reset: $e\n$stackTrace');
     }
@@ -291,84 +303,43 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
 class WaterBackgroundComponent extends Component {
   @override
   Future<void> onLoad() async {
-    final topColor = Paint()..color = const Color(0xFF87CEEB); // Azzurro cielo
-    final middleColor = Paint()..color = const Color(0xFF4682B4); // Blu acciaio
-    final bottomColor = Paint()..color = const Color(0xFF000080); // Blu navy
-    
-    // Sfondo a gradiente
-    final background = GradientBackgroundComponent(
-      colors: [topColor.color, middleColor.color, bottomColor.color],
-      stops: const [0.0, 0.6, 1.0],
-    );
+    // Aggiungi solo uno sfondo a gradiente che copre l'intero schermo
+    final background = FullScreenGradientComponent();
     add(background);
     
-    // Aggiungi raggi di luce
-    for (int i = 0; i < 5; i++) {
-      final x = Random().nextDouble() * 800;
-      final lightRay = LightRayComponent(
-        position: Vector2(x, 0),
-        width: 100 + Random().nextDouble() * 100,
-      );
-      add(lightRay);
-    }
+    // Nessun raggio di luce - rimossi completamente per eliminare le strisce verticali
   }
 }
 
-class GradientBackgroundComponent extends PositionComponent {
-  final List<Color> colors;
-  final List<double> stops;
-  
-  GradientBackgroundComponent({
-    required this.colors,
-    required this.stops,
-  });
+class FullScreenGradientComponent extends PositionComponent with HasGameRef {
+  @override
+  Future<void> onLoad() async {
+    // Assicurati che il componente copra l'intero schermo
+    size = gameRef.size;
+    position = Vector2.zero();
+    
+    // Imposta la priorità più bassa per essere disegnato prima di tutto
+    priority = -100;
+  }
   
   @override
   void render(Canvas canvas) {
-    final rect = Rect.fromLTWH(0, 0, 800, 600);
+    // Crea un gradiente che copre l'intero schermo
+    final rect = Rect.fromLTWH(0, 0, size.x, size.y);
     final paint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: colors,
-        stops: stops,
+        colors: [
+          const Color(0xFF87CEEB), // Azzurro cielo
+          const Color(0xFF4682B4), // Blu acciaio
+          const Color(0xFF000080), // Blu navy
+        ],
+        stops: const [0.0, 0.6, 1.0],
       ).createShader(rect);
     
+    // Disegna un rettangolo che copre l'intero schermo
     canvas.drawRect(rect, paint);
-  }
-}
-
-class LightRayComponent extends PositionComponent {
-  final double width;
-  
-  LightRayComponent({
-    required Vector2 position,
-    required this.width,
-  }) : super(position: position);
-  
-  @override
-  Future<void> onLoad() async {
-    final paint = Paint()
-      ..color = const Color(0xAAFFFFFF)
-      ..style = PaintingStyle.fill;
-    
-    add(
-      RectangleComponent(
-        position: Vector2(0, 0),
-        size: Vector2(width, 600),
-        paint: paint,
-      )
-      ..add(
-        OpacityEffect.to(
-          0.3,
-          EffectController(
-            duration: 3 + Random().nextDouble() * 2,
-            reverseDuration: 3 + Random().nextDouble() * 2,
-            infinite: true,
-          ),
-        ),
-      ),
-    );
   }
 }
 

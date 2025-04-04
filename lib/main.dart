@@ -418,7 +418,7 @@ class _GameOverOverlayState extends State<GameOverOverlay> {
       child: Container(
         padding: const EdgeInsets.all(30),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.7),
+          color: Colors.black.withOpacity(0.8), // Aumentato l'opacità
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -431,58 +431,39 @@ class _GameOverOverlayState extends State<GameOverOverlay> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Titolo Game Over con animazione
-            AnimatedTextKit(
-              animatedTexts: [
-                FlickerAnimatedText(
-                  'GAME OVER',
-                  textStyle: const TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red,
-                    shadows: [
-                      Shadow(
-                        blurRadius: 10.0,
-                        color: Colors.black,
-                        offset: Offset(3.0, 3.0),
-                      ),
-                    ],
+            // Titolo Game Over senza animazione
+            const Text(
+              'GAME OVER',
+              style: TextStyle(
+                fontSize: 48,
+                fontWeight: FontWeight.bold,
+                color: Colors.red,
+                shadows: [
+                  Shadow(
+                    blurRadius: 10.0,
+                    color: Colors.black,
+                    offset: Offset(3.0, 3.0),
                   ),
-                  speed: const Duration(milliseconds: 1000),
-                ),
-              ],
-              isRepeatingAnimation: true,
-              repeatForever: true,
+                ],
+              ),
             ),
             const SizedBox(height: 30),
             
-            // Punteggio con animazione di conteggio
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Punteggio: ',
-                  style: TextStyle(
-                    fontSize: 24,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+            // Punteggio senza animazione per assicurarsi che sia sempre visibile
+            Text(
+              'Punteggio: ${widget.game.score}',
+              style: const TextStyle(
+                fontSize: 28,
+                color: Colors.yellow,
+                fontWeight: FontWeight.bold,
+                shadows: [
+                  Shadow(
+                    blurRadius: 5.0,
+                    color: Colors.black,
+                    offset: Offset(2.0, 2.0),
                   ),
-                ),
-                AnimatedTextKit(
-                  animatedTexts: [
-                    ScaleAnimatedText(
-                      '${widget.game.score}',
-                      textStyle: const TextStyle(
-                        fontSize: 28,
-                        color: Colors.yellow,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      duration: const Duration(milliseconds: 1000),
-                    ),
-                  ],
-                  totalRepeatCount: 1,
-                ),
-              ],
+                ],
+              ),
             ),
             const SizedBox(height: 40),
             

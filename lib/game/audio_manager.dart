@@ -16,7 +16,7 @@ class AudioManager {
   static Timer? _musicLoopTimer;
   
   // Nome del file per il suono ambientale subacqueo
-  static const String underwaterSoundFile = '774918__klankbeeld__backswimmer-under-water-134-pm-220725_0457.wav';
+  static const String underwaterSoundFile = '774918__klankbeeld__backswimmer-under-water-134-pm-220725_0457.mp3';
   
   // Nome del file per il suono quando il pesce viene ferito
   static const String hurtSoundFile = 'hai_hai.m4a';
@@ -123,9 +123,11 @@ class AudioManager {
   
   // Riproduci musica di sottofondo in loop
   static void playBackgroundMusic() {
-    if (_bgmPlaying || !_musicAvailable) {
-      developer.log('AudioManager: playBackgroundMusic - già in riproduzione o non disponibile. '
-          'bgmPlaying=$_bgmPlaying, musicAvailable=$_musicAvailable');
+    // Assicurati che eventuali musiche precedenti siano fermate
+    stopBackgroundMusic();
+    
+    if (!_musicAvailable) {
+      developer.log('AudioManager: playBackgroundMusic - musica non disponibile');
       return;
     }
     
@@ -165,11 +167,29 @@ class AudioManager {
     }
   }
   
+  // Ferma la musica di sottofondo
+  static void stopBackgroundMusic() {
+    if (_bgmPlaying) {
+      developer.log('AudioManager: arresto musica di sottofondo');
+      _bgmPlaying = false;
+      
+      // Ferma il timer per il loop della musica
+      _musicLoopTimer?.cancel();
+      _musicLoopTimer = null;
+      
+      // In Flame Audio non c'è un modo diretto per fermare un audio in riproduzione
+      // ma possiamo impostare il flag a false per evitare che venga riprodotto di nuovo
+      developer.log('AudioManager: musica di sottofondo fermata');
+    }
+  }
+  
   // Riproduci suono ambientale
   static void playAmbientSound() {
-    if (_ambientPlaying || !_ambientSoundAvailable) {
-      developer.log('AudioManager: playAmbientSound - già in riproduzione o non disponibile. '
-          'ambientPlaying=$_ambientPlaying, ambientSoundAvailable=$_ambientSoundAvailable');
+    // Assicurati che eventuali suoni ambientali precedenti siano fermati
+    stopAmbientSound();
+    
+    if (!_ambientSoundAvailable) {
+      developer.log('AudioManager: playAmbientSound - suono non disponibile');
       return;
     }
     
@@ -189,6 +209,18 @@ class AudioManager {
       _ambientPlaying = true;
     } catch (e, stackTrace) {
       developer.log('ERRORE in AudioManager.playAmbientSound: $e\n$stackTrace');
+    }
+  }
+  
+  // Ferma il suono ambientale
+  static void stopAmbientSound() {
+    if (_ambientPlaying) {
+      developer.log('AudioManager: arresto suono ambientale');
+      _ambientPlaying = false;
+      
+      // In Flame Audio non c'è un modo diretto per fermare un audio in riproduzione
+      // ma possiamo impostare il flag a false per evitare che venga riprodotto di nuovo
+      developer.log('AudioManager: suono ambientale fermato');
     }
   }
   
@@ -238,20 +270,32 @@ class AudioManager {
     }
   }
   
-  // Ferma tutta la musica e i suoni
+  // Ferma tutta la musica e i suoni in modo più deciso
   static void stopAll() {
     try {
-      developer.log('AudioManager: arresto di tutti i suoni');
-      // Non possiamo fermare i suoni riprodotti con FlameAudio.play
-      // ma possiamo impostare i flag per evitare di riprodurli di nuovo
+      developer.log('AudioManager: arresto completo di tutti i suoni');
+      
+      // Ferma la musica di sottofondo
       _bgmPlaying = false;
+      
+      // Ferma il suono ambientale
       _ambientPlaying = false;
       
-      // Fermiamo il timer per il loop della musica
+      // Ferma il timer per il loop della musica
       _musicLoopTimer?.cancel();
       _musicLoopTimer = null;
       
-      developer.log('AudioManager: flag di riproduzione reimpostati');
+      // In Flame Audio non c'è un modo diretto per fermare un audio in riproduzione
+      // Tentiamo di accedere all'audio pool e svuotarlo
+      try {
+        // Rimuoviamo gli audio dal cache per forzare il ricaricamento
+        FlameAudio.audioCache.clearAll();
+        developer.log('AudioManager: audio cache svuotata con successo');
+      } catch (e) {
+        developer.log('AudioManager: errore durante lo svuotamento della cache: $e');
+      }
+      
+      developer.log('AudioManager: tutti i suoni fermati con successo');
     } catch (e, stackTrace) {
       developer.log('ERRORE in AudioManager.stopAll: $e\n$stackTrace');
     }
