@@ -169,6 +169,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       // Preserva gli overlay attivi prima di togglefare il fullscreen
       final activeOverlays = _game.overlays.activeOverlays.toList();
       
+      // Ferma la musica temporaneamente per evitare duplicazioni
+      AudioManager.stopAll();
+      
       // Aggiorna lo stato fullscreen
       setState(() {
         _isFullScreen = !_isFullScreen;
@@ -182,7 +185,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       }
       
       // Piccolo ritardo per assicurarsi che lo stato del DOM sia aggiornato
-      Future.delayed(const Duration(milliseconds: 100), () {
+      Future.delayed(const Duration(milliseconds: 300), () {
         // Assicurati che gli stessi overlay siano attivi dopo il toggle
         _game.overlays.clear();
         for (final overlay in activeOverlays) {
@@ -191,6 +194,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         
         // Forza l'aggiornamento delle dimensioni del gioco
         _updateGameSize();
+        
+        // Riavvia la musica solo se il gioco è già iniziato
+        if (!_game.overlays.isActive('startGame')) {
+          AudioManager.playBackgroundMusic();
+        }
       });
     } catch (e) {
       print('Errore nel toggle fullscreen: $e');
@@ -458,7 +466,7 @@ class _StartGameOverlayState extends State<StartGameOverlay> with TickerProvider
                                     widget.game.overlays.add('gameHud');
                                     
                                     // Se siamo su mobile/tablet, mostra i controlli touch
-                                    if (MediaQuery.of(context).size.width < 768) {
+                                    if (_isMobileDevice(context)) {
                                       widget.game.overlays.add('touchControls');
                                     }
                                   },
@@ -598,9 +606,10 @@ class _StartGameOverlayState extends State<StartGameOverlay> with TickerProvider
   
   // Funzione per verificare se siamo su un dispositivo mobile
   bool _isMobileDevice(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    // Considera mobile se la larghezza è inferiore a 768px o se è un dispositivo touch
-    return mediaQuery.size.width < 768;
+    // Il joystick deve essere mostrato sia su cellulari che su tablet
+    // Verifichiamo solo se NON è un desktop tramite la larghezza
+    final width = MediaQuery.of(context).size.width;
+    return width < 1200; // Aumentato questo valore per includere tablet
   }
   
   // Costruisce le bolle naturali
@@ -700,8 +709,8 @@ class _TouchControlsOverlayState extends State<TouchControlsOverlay> {
   bool _isDragging = false;
   
   // Raggio del joystick
-  final double _joystickRadius = 50.0;
-  final double _handleRadius = 20.0;
+  final double _joystickRadius = 70.0; // Aumentato per essere più visibile sui tablet
+  final double _handleRadius = 30.0; // Aumentato per essere più visibile sui tablet
   
   @override
   Widget build(BuildContext context) {
@@ -713,7 +722,7 @@ class _TouchControlsOverlayState extends State<TouchControlsOverlay> {
     if (isLandscape) {
       _basePosition = Offset(150, screenSize.height / 2); // A sinistra al centro in landscape
     } else {
-      _basePosition = Offset(100, screenSize.height - 150); // In basso a sinistra in portrait
+      _basePosition = Offset(120, screenSize.height - 180); // In basso a sinistra in portrait
     }
     
     return Positioned.fill(

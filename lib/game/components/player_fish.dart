@@ -21,6 +21,11 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
   double _invulnerabilityTimer = 0;
   final double _invulnerabilityDuration = 0.5; // Mezzo secondo di invulnerabilità
   
+  // Immunità temporanea alla guarigione per evitare doppie cure
+  bool _isHealingImmune = false;
+  double _healingImmuneTimer = 0;
+  final double _healingImmuneDuration = 0.3; // 0.3 secondi di immunità alla cura
+  
   PlayerFish() : super(size: Vector2(80, 60), position: Vector2(100, 300)) {
     developer.log('PlayerFish: costruttore chiamato');
     anchor = Anchor.center;
@@ -82,6 +87,14 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
           opacity = 1.0; // Ripristina l'opacità normale
         }
       }
+      
+      // Gestisci il timer di immunità alla guarigione
+      if (_isHealingImmune) {
+        _healingImmuneTimer -= dt;
+        if (_healingImmuneTimer <= 0) {
+          _isHealingImmune = false;
+        }
+      }
     } catch (e, stackTrace) {
       developer.log('Errore in PlayerFish.update: $e\n$stackTrace');
     }
@@ -120,16 +133,24 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
           other.removeFromParent();
         } else {
           // Il giocatore ha mangiato un pesce sicuro
-          developer.log('PlayerFish: collisione con pesce sicuro');
-          gameRef.increaseScore();
-          gameRef.increaseHealth(other.healAmount);
-          other.removeFromParent();
+          // Ignora se siamo immuni alla guarigione
+          if (!_isHealingImmune) {
+            developer.log('PlayerFish: collisione con pesce sicuro');
+            gameRef.increaseScore();
+            gameRef.increaseHealth(other.healAmount);
+            _activateHealingImmunity();
+            other.removeFromParent();
+          }
         }
       } else if (other is OctopusEnemy) {
         // Il polipetto ora è amichevole e cura il giocatore
-        developer.log('PlayerFish: collisione con polipetto amichevole');
-        gameRef.increaseHealth(other.healAmount);
-        other.removeFromParent();
+        // Ignora se siamo immuni alla guarigione
+        if (!_isHealingImmune) {
+          developer.log('PlayerFish: collisione con polipetto amichevole');
+          gameRef.increaseHealth(other.healAmount);
+          _activateHealingImmunity();
+          other.removeFromParent();
+        }
       } else if (other is JellyfishEnemy) {
         // La medusa è pericolosa e toglie il 10% di vita
         developer.log('PlayerFish: collisione con medusa');
@@ -141,7 +162,9 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
         developer.log('PlayerFish: collisione con murena elettrica');
         gameRef.decreaseHealth(other.damageAmount);
         _activateInvulnerability();
-        other.removeFromParent();
+        // La murena non viene rimossa quando fa collisione
+        // Questo permette alla murena di continuare a esistere e usare i suoi attacchi elettrici
+        // other.removeFromParent(); - commentiamo questa linea
       }
     } catch (e, stackTrace) {
       developer.log('Errore in PlayerFish.onCollision: $e\n$stackTrace');
@@ -152,5 +175,11 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
   void _activateInvulnerability() {
     _isInvulnerable = true;
     _invulnerabilityTimer = _invulnerabilityDuration;
+  }
+  
+  // Attiva l'immunità temporanea alla guarigione per evitare cure multiple
+  void _activateHealingImmunity() {
+    _isHealingImmune = true;
+    _healingImmuneTimer = _healingImmuneDuration;
   }
 }

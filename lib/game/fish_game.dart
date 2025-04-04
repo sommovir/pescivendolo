@@ -39,7 +39,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   
   // Timer per la murena elettrica
   double _eelSpawnTimer = 0;
-  double _eelSpawnInterval = 20.0; // Spawn electric eel every 20 seconds (più frequente)
+  double _eelSpawnInterval = 5.0; // Spawn electric eel every 5 seconds (aumentato ulteriormente)
   
   // Timer per le bolle
   double _bubbleTimer = 0;
@@ -224,7 +224,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       _spawnInterval = max(_spawnInterval * 0.95, 0.7); // Minimo 0.7 secondi
       _octopusSpawnInterval = max(_octopusSpawnInterval * 0.95, 8.0); // Minimo 8 secondi
       _jellyfishSpawnInterval = max(_jellyfishSpawnInterval * 0.9, 8.0); // Minimo 8 secondi
-      _eelSpawnInterval = max(_eelSpawnInterval * 0.9, 10.0); // Minimo 10 secondi
+      _eelSpawnInterval = max(_eelSpawnInterval * 0.9, 5.0); // Minimo 5 secondi
       
       // Aumenta la dimensione dei branchi di meduse
       _maxJellyfishInSwarm = min(_maxJellyfishInSwarm + 1, 12); // Massimo 12 meduse
@@ -414,8 +414,22 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   }
   
   void increaseHealth(double amount) {
-    _health = min(100, _health + amount);
-    AudioManager.playEatSound(); // Usa il metodo esistente
+    try {
+      // Calcola nuovo valore ma non superare il 100%
+      final newHealth = min(100.0, _health + amount);
+      
+      // Se il nuovo valore è diverso da quello attuale, riproduci il suono
+      if (newHealth > _health) {
+        AudioManager.playEatSound(); // Usa il metodo esistente
+      }
+      
+      // Aggiorna la salute
+      _health = newHealth;
+      
+      developer.log('FishGame: aumentata salute a $_health');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame.increaseHealth: $e\n$stackTrace');
+    }
   }
   
   void _gameOver() {

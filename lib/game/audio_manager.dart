@@ -37,6 +37,12 @@ class AudioManager {
   static bool _musicAvailable = false;
   static bool _ambientSoundAvailable = false;
   
+  // Variabili per limitare la riproduzione troppo frequente
+  static DateTime _lastEatSound = DateTime.now().subtract(const Duration(seconds: 1));
+  static DateTime _lastHurtSound = DateTime.now().subtract(const Duration(seconds: 1));
+  static DateTime _lastEffectSound = DateTime.now().subtract(const Duration(seconds: 1));
+  static const Duration _minSoundInterval = Duration(milliseconds: 100);
+  
   // Inizializza l'audio manager
   static Future<void> initialize() async {
     if (_initialized) return;
@@ -238,6 +244,14 @@ class AudioManager {
         return;
       }
       
+      // Limita la frequenza di riproduzione per evitare overflow
+      final now = DateTime.now();
+      if (now.difference(_lastEatSound) < _minSoundInterval) {
+        developer.log('AudioManager: riproduzione suono mangia troppo frequente, ignorata');
+        return;
+      }
+      _lastEatSound = now;
+      
       developer.log('AudioManager: riproduzione suono mangia');
       FlameAudio.play(eatSoundFile);
       developer.log('AudioManager: suono mangia riprodotto con successo');
@@ -260,6 +274,14 @@ class AudioManager {
         return;
       }
       
+      // Limita la frequenza di riproduzione per evitare overflow
+      final now = DateTime.now();
+      if (now.difference(_lastHurtSound) < _minSoundInterval) {
+        developer.log('AudioManager: riproduzione suono ferito troppo frequente, ignorata');
+        return;
+      }
+      _lastHurtSound = now;
+      
       developer.log('AudioManager: riproduzione suono ferito');
       // Nella versione attuale di flame_audio, non possiamo usare startAt
       // Riproduciamo il file così com'è
@@ -267,6 +289,31 @@ class AudioManager {
       developer.log('AudioManager: suono ferito riprodotto con successo');
     } catch (e, stackTrace) {
       developer.log('ERRORE in AudioManager.playHurtSound: $e\n$stackTrace');
+    }
+  }
+  
+  // Riproduci un effetto sonoro generico
+  static void playSoundEffect(String fileName, {double volume = 1.0}) {
+    try {
+      // Nei browser web, l'audio può essere riprodotto solo dopo un'interazione dell'utente
+      if (!_userInteracted) {
+        developer.log('AudioManager: impossibile riprodurre l\'effetto sonoro $fileName, utente non ha ancora interagito con la pagina');
+        return;
+      }
+      
+      // Limita la frequenza di riproduzione per evitare overflow
+      final now = DateTime.now();
+      if (now.difference(_lastEffectSound) < _minSoundInterval) {
+        developer.log('AudioManager: riproduzione effetto sonoro troppo frequente, ignorata');
+        return;
+      }
+      _lastEffectSound = now;
+      
+      developer.log('AudioManager: riproduzione effetto sonoro $fileName');
+      FlameAudio.play(fileName, volume: volume);
+      developer.log('AudioManager: effetto sonoro riprodotto con successo');
+    } catch (e, stackTrace) {
+      developer.log('ERRORE in AudioManager.playSoundEffect: $e\n$stackTrace');
     }
   }
   
@@ -298,23 +345,6 @@ class AudioManager {
       developer.log('AudioManager: tutti i suoni fermati con successo');
     } catch (e, stackTrace) {
       developer.log('ERRORE in AudioManager.stopAll: $e\n$stackTrace');
-    }
-  }
-  
-  // Riproduci un effetto sonoro generico
-  static void playSoundEffect(String fileName, {double volume = 1.0}) {
-    try {
-      // Nei browser web, l'audio può essere riprodotto solo dopo un'interazione dell'utente
-      if (!_userInteracted) {
-        developer.log('AudioManager: impossibile riprodurre l\'effetto sonoro $fileName, utente non ha ancora interagito con la pagina');
-        return;
-      }
-      
-      developer.log('AudioManager: riproduzione effetto sonoro $fileName');
-      FlameAudio.play(fileName, volume: volume);
-      developer.log('AudioManager: effetto sonoro riprodotto con successo');
-    } catch (e, stackTrace) {
-      developer.log('ERRORE in AudioManager.playSoundEffect: $e\n$stackTrace');
     }
   }
 }
