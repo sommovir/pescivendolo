@@ -15,4 +15,3 @@ jobs:
       - uses: bluefireteam/flutter-gh-pages@v8
         with:
           baseHref: /pescivendolo/
-          webRenderer: canvaskit
