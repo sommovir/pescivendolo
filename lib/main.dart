@@ -1,9 +1,11 @@
 import 'dart:math';
-import 'dart:async';
+import 'dart:async' as darts;
 import 'dart:html' as html;
 import 'dart:ui' as ui;
 import 'package:flame/game.dart';
+import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pescivendolo_game/game/fish_game.dart';
 import 'package:pescivendolo_game/game/audio_manager.dart';
 import 'package:pescivendolo_game/game/components/water_background.dart';
@@ -34,7 +36,8 @@ class MyApp extends StatelessWidget {
       title: 'Pescivendolo Game',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
       home: const GameScreen(),
@@ -61,9 +64,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     
     // Registra l'observer per i cambiamenti di orientamento
     WidgetsBinding.instance.addObserver(this);
-    
-    // Controlla l'orientamento iniziale
-    _checkOrientation();
   }
   
   @override
@@ -74,6 +74,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
   
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    
+    // Ora possiamo controllare l'orientamento in modo sicuro
+    _checkOrientation();
+  }
+  
+  @override
   void didChangeMetrics() {
     // Questo metodo viene chiamato quando cambiano le metriche (incluso l'orientamento)
     super.didChangeMetrics();
@@ -81,6 +89,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
   
   void _checkOrientation() {
+    // Verifichiamo che il context sia montato prima di usare MediaQuery
+    if (!mounted) return;
+    
     // Controlla se siamo in modalità landscape
     final orientation = MediaQuery.of(context).orientation;
     final newIsLandscape = orientation == Orientation.landscape;
@@ -218,7 +229,7 @@ class StartGameOverlay extends StatefulWidget {
 
 class _StartGameOverlayState extends State<StartGameOverlay> with TickerProviderStateMixin {
   bool _hoveringStartButton = false;
-  late Timer _fishMoveTimer;
+  late darts.Timer _fishMoveTimer;
   late AnimationController _bubbleAnimationController;
   
   // Immagini dei pesci dagli assets
@@ -258,7 +269,7 @@ class _StartGameOverlayState extends State<StartGameOverlay> with TickerProvider
     _initializeFishAnimations();
     
     // Avvia il timer per muovere i pesci
-    _fishMoveTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    _fishMoveTimer = darts.Timer.periodic(const Duration(milliseconds: 16), (timer) {
       _updateFishPositions();
     });
   }
@@ -836,32 +847,38 @@ class GameHudOverlay extends StatefulWidget {
 }
 
 class _GameHudOverlayState extends State<GameHudOverlay> {
-  late Timer _gameTimer;
-  int _elapsedSeconds = 0;
+  int _seconds = 0;
+  int _minutes = 0;
+  darts.Timer? _gameTimer;
   
   @override
   void initState() {
     super.initState();
-    // Avvia il timer di gioco
-    _gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    
+    // Avvia timer per il tempo di gioco
+    _gameTimer = darts.Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
-        _elapsedSeconds++;
+        _seconds++;
+        if (_seconds >= 60) {
+          _seconds = 0;
+          _minutes++;
+        }
       });
     });
   }
   
   @override
   void dispose() {
-    _gameTimer.cancel();
+    _gameTimer?.cancel();
     super.dispose();
   }
   
   @override
   Widget build(BuildContext context) {
     // Formatta il tempo trascorso in minuti:secondi
-    final minutes = _elapsedSeconds ~/ 60;
-    final seconds = _elapsedSeconds % 60;
-    final timeString = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    final minutes = _minutes.toString().padLeft(2, '0');
+    final seconds = _seconds.toString().padLeft(2, '0');
+    final timeString = '$minutes:$seconds';
     
     return Positioned(
       top: 10,

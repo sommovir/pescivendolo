@@ -390,13 +390,18 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     return KeyEventResult.handled;
   }
   
-  void increaseScore() {
-    score++;
+  void increaseScore([int points = 1]) {
+    score += points;
     AudioManager.playEatSound(); // Usa il metodo esistente
   }
   
   // Metodi per gestire la salute del giocatore
   double get health => _health;
+  
+  // Metodo per danneggiare il player, usato dalle murene elettriche
+  void damagePlayer(double amount) {
+    decreaseHealth(amount);
+  }
   
   void decreaseHealth(double amount) {
     _health = max(0, _health - amount);

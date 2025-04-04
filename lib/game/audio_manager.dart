@@ -300,4 +300,21 @@ class AudioManager {
       developer.log('ERRORE in AudioManager.stopAll: $e\n$stackTrace');
     }
   }
+  
+  // Riproduci un effetto sonoro generico
+  static void playSoundEffect(String fileName, {double volume = 1.0}) {
+    try {
+      // Nei browser web, l'audio può essere riprodotto solo dopo un'interazione dell'utente
+      if (!_userInteracted) {
+        developer.log('AudioManager: impossibile riprodurre l\'effetto sonoro $fileName, utente non ha ancora interagito con la pagina');
+        return;
+      }
+      
+      developer.log('AudioManager: riproduzione effetto sonoro $fileName');
+      FlameAudio.play(fileName, volume: volume);
+      developer.log('AudioManager: effetto sonoro riprodotto con successo');
+    } catch (e, stackTrace) {
+      developer.log('ERRORE in AudioManager.playSoundEffect: $e\n$stackTrace');
+    }
+  }
 }
