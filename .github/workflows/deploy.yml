@@ -5,18 +5,19 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
-
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-
+    
+    permissions:
+      contents: write  # Autorizzazione esplicita per scrivere sul repository
+    
     steps:
-      - uses: actions/checkout@v3
-      - uses: subosito/flutter-action@v2
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.x'
           channel: 'stable'
@@ -30,8 +31,14 @@ jobs:
       - name: Build web
         run: flutter build web --release --base-href /pescivendolo/
         
+      # Aggiunta del file .nojekyll per evitare che GitHub Pages elabori il sito con Jekyll
+      - name: Add .nojekyll file
+        run: touch build/web/.nojekyll
+        
+      # Usa un'azione più affidabile per il deploy su gh-pages
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build/web
+          folder: build/web   # La cartella da pubblicare
+          branch: gh-pages    # Il branch di destinazione
+          clean: true         # Rimuove i file che non fanno parte della build
