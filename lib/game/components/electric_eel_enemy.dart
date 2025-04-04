@@ -18,7 +18,7 @@ enum EelState {
 class ElectricEelEnemy extends SpriteComponent with CollisionCallbacks, HasGameRef<FishGame> {
   final double speed;
   final double sizeMultiplier;
-  final double baseDamageAmount = 25.0;  // Danno normale per contatto (25%)
+  final double baseDamageAmount = 20.0;  // Danno normale per contatto (20%) - modificato da 25% a 20%
   final double shockDamageAmount = 50.0; // Danno della scarica elettrica (50%)
   
   // Parametri per il comportamento di scarica
@@ -329,8 +329,8 @@ class ElectricEelEnemy extends SpriteComponent with CollisionCallbacks, HasGameR
       // Aggiungi un effetto particellare per la scarica
       _addShockParticles();
       
-      // Trova tutti i componenti entro il raggio di scarica
-      final myPos = position + Vector2(size.x / 2, size.y / 2);
+      // Ottieni la posizione centrale della murena per calcolare distanze
+      final myPos = position.clone();
       var playerDamaged = false;
       
       // Verifica esplicitamente se il giocatore è nel raggio
@@ -339,7 +339,8 @@ class ElectricEelEnemy extends SpriteComponent with CollisionCallbacks, HasGameR
       
       if (distanceToPlayer <= shockRadius) {
         developer.log('ElectricEelEnemy: GIOCATORE NEL RAGGIO! Applico danno: $shockDamageAmount');
-        gameRef.damagePlayer(shockDamageAmount);
+        // Applica danno direttamente alla salute del giocatore
+        gameRef.decreaseHealth(shockDamageAmount);
         playerDamaged = true;
       }
       
@@ -415,7 +416,7 @@ class ElectricEelEnemy extends SpriteComponent with CollisionCallbacks, HasGameR
       // Gestiamo la collisione solo per il giocatore
       if (other == gameRef.player) {
         developer.log('ElectricEelEnemy: collisione con il giocatore!');
-        // Damage on contact (25%)
+        // Damage on contact (20%)
         if (!_recentlyCollidedWithPlayer) {
           gameRef.damagePlayer(baseDamageAmount);
           _recentlyCollidedWithPlayer = true;
