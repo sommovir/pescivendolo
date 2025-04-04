@@ -120,10 +120,33 @@ class _GameScreenState extends State<GameScreen> {
         for (final overlay in activeOverlays) {
           _game.overlays.add(overlay);
         }
+        
+        // Forza l'aggiornamento delle dimensioni del gioco
+        _updateGameSize();
       });
     } catch (e) {
       print('Errore nel toggle fullscreen: $e');
     }
+  }
+  
+  // Metodo per aggiornare le dimensioni del gioco
+  void _updateGameSize() {
+    // Ottieni le dimensioni correnti della finestra
+    final windowWidth = html.window.innerWidth ?? 0;
+    final windowHeight = html.window.innerHeight ?? 0;
+    
+    // Usa la resize API di Flame per impostare le nuove dimensioni
+    _game.onGameResize(Vector2(windowWidth.toDouble(), windowHeight.toDouble()));
+    
+    // Se necessario, aggiorna anche le dimensioni del canvas/container
+    final canvasElement = html.document.getElementById('gameCanvas') as html.CanvasElement?;
+    if (canvasElement != null) {
+      canvasElement.width = windowWidth;
+      canvasElement.height = windowHeight;
+    }
+    
+    // Forza un ridisegno del gioco
+    _game.resumeEngine();
   }
 }
 

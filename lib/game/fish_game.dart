@@ -517,9 +517,21 @@ class FullScreenGradientComponent extends PositionComponent with HasGameRef {
   }
   
   @override
+  void onGameResize(Vector2 gameSize) {
+    // Aggiorna le dimensioni ogni volta che la dimensione del gioco cambia
+    size = gameSize;
+    position = Vector2.zero();
+    super.onGameResize(gameSize);
+  }
+  
+  @override
   void render(Canvas canvas) {
+    // Assicurati che le dimensioni siano sempre aggiornate
+    final screenSize = gameRef.size;
+    size = screenSize;
+    
     // Crea un gradiente che copre l'intero schermo
-    final rect = Rect.fromLTWH(0, 0, size.x, size.y);
+    final rect = Rect.fromLTWH(0, 0, screenSize.x, screenSize.y);
     final paint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter,

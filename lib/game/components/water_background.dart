@@ -12,26 +12,28 @@ class WaterBackground extends StatelessWidget {
     return Stack(
       children: [
         // Sfondo con gradiente migliorato
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.blue.shade200,
-                Colors.blue.shade400,
-                Colors.blue.shade600,
-                Colors.blue.shade900,
-              ],
-              stops: const [0.0, 0.3, 0.6, 1.0],
+        Positioned.fill(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.blue.shade200,
+                  Colors.blue.shade400,
+                  Colors.blue.shade600,
+                  Colors.blue.shade900,
+                ],
+                stops: const [0.0, 0.3, 0.6, 1.0],
+              ),
             ),
           ),
         ),
         
-        // Effetto bolle d'acqua
-        Positioned.fill(
-          child: BubbleEffect(),
-        ),
+        // Disattivo l'effetto bolle d'acqua che causa la banda orizzontale
+        // Positioned.fill(
+        //   child: BubbleEffect(),
+        // ),
         
         // Contenuto principale
         child,
