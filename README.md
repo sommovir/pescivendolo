@@ -6,7 +6,7 @@ Un gioco 2D sviluppato con Flutter e il framework Flame, dove controlli un pesce
 
 ## Come giocare
 
-- **Controlli**: Usa i tasti WASD o le frecce direzionali per muovere il pesce
+- **Controlli**: Usa i tasti WASD o le frecce direzionali per muovere il pesciolino
 - **Obiettivo**: Mangia i pesci verdi per aumentare il tuo punteggio
 - **Pericoli**: Evita i pesci rossi e altri che ti toglieranno una vita
 - **Vite**: Hai 3 vite per completare la partita
