@@ -1,9 +1,14 @@
-name: Gh-Pages
+name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build:
@@ -12,6 +17,21 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: subosito/flutter-action@v2
-      - uses: bluefireteam/flutter-gh-pages@v8
         with:
-          baseHref: /pescivendolo/
+          flutter-version: '3.x'
+          channel: 'stable'
+      
+      - name: Install dependencies
+        run: flutter pub get
+        
+      - name: Enable web
+        run: flutter config --enable-web
+        
+      - name: Build web
+        run: flutter build web --release --base-href /pescivendolo/
+        
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/web
