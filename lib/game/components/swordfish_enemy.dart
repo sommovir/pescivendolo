@@ -16,7 +16,7 @@ enum SwordfishState {
 class SwordfishEnemy extends SpriteComponent with CollisionCallbacks, HasGameRef<FishGame> {
   final double speed;
   final double sizeMultiplier;
-  final double damageAmount = 35.0;  // Toglie 35% di vita se colpisce
+  final double damageAmount = 40.0;  // Toglie 40% di vita se colpisce
   
   // Parametri specifici per il pesce spada
   final double chargeSpeed;        // Velocità di carica, molto alta
@@ -60,9 +60,8 @@ class SwordfishEnemy extends SpriteComponent with CollisionCallbacks, HasGameRef
       sprite = Sprite(spriteImage);
       developer.log('SwordfishEnemy: immagine caricata con successo');
       
-      // Inizialmente mostra solo il 20% dell'immagine (la spada) sporgente
-      // Spostiamo la sprite fuori dallo schermo parzialmente
-      position.x = gameRef.size.x - (size.x * 0.2);
+      // Inizialmente mostra solo il naso (punta) del pesce spada sporgente dallo schermo
+      position.x = gameRef.size.x + size.x * 0.8; // Solo il 20% (il naso) è visibile
       _fullySpriteVisible = false;
       
       // Aggiungi hitbox per il rilevamento delle collisioni
@@ -154,7 +153,7 @@ class SwordfishEnemy extends SpriteComponent with CollisionCallbacks, HasGameRef
     
     // Ora il pesce è completamente visibile
     _fullySpriteVisible = true;
-    position.x = gameRef.size.x - size.x; // Sposta il pesce completamente nello schermo
+    position.x = gameRef.size.x; // Sposta il pesce al bordo destro dello schermo
     
     // Cambia l'ancoraggio per il movimento
     anchor = Anchor.center;
@@ -167,8 +166,8 @@ class SwordfishEnemy extends SpriteComponent with CollisionCallbacks, HasGameRef
     // Durante la carica, il pesce si muove molto velocemente verso sinistra
     position.x -= chargeSpeed * dt;
     
-    // Se il pesce supera il 75% dello schermo, passa allo stato di uscita
-    if (position.x < gameRef.size.x * 0.25) {
+    // Se il pesce supera il 90% dello schermo, passa allo stato di uscita
+    if (position.x < gameRef.size.x * 0.1) {
       _currentState = SwordfishState.exiting;
     }
   }

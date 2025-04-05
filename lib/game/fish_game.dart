@@ -44,7 +44,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   
   // Timer per il pesce spada
   double _swordfishSpawnTimer = 0;
-  double _swordfishSpawnInterval = 15.0; // Spawn pesce spada ogni 15 secondi (inizialmente raro)
+  double _swordfishSpawnInterval = 12.0; // Spawn pesce spada ogni 12 secondi (più frequente)
   int _maxSimultaneousSwordfish = 1; // Numero massimo di pesci spada simultanei, aumenterà col tempo
   
   // Timer per le bolle
@@ -397,17 +397,17 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         double speedVariation = _random.nextDouble() * 30.0 - 15.0; // ±15
         double swordfishSpeed = baseSpeed + speedVariation;
         
-        // La velocità di carica è molto più alta della velocità normale
-        double chargeSpeed = swordfishSpeed * 3.5; // 3.5 volte più veloce durante la carica
-        
         // Posizione Y casuale per il pesce spada
         double posY = _random.nextDouble() * (size.y - 150) + 75;
         
-        // Dimensione del pesce spada (leggermente più grande di un pesce normale)
-        double sizeMultiplier = 15 + _random.nextDouble() * 0.5; // Da 15x a 2x
+        // Dimensione del pesce spada (aumentata a 25x come richiesto)
+        double sizeMultiplier = 25.0 + _random.nextDouble() * 0.5; // Da 25x a 25.5x
         
         // Durata del tremore casuale tra 1 e 3 secondi come richiesto
         double peekingDuration = 1.0 + _random.nextDouble() * 2.0; // Da 1 a 3 secondi
+        
+        // La velocità di carica è molto più alta della velocità normale
+        double chargeSpeed = swordfishSpeed * 4.0; // 4.0 volte più veloce durante la carica (aumentata)
         
         final swordfish = SwordfishEnemy(
           position: Vector2(

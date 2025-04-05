@@ -266,7 +266,7 @@ class ElectricEelEnemy extends SpriteComponent with CollisionCallbacks, HasGameR
       
       // Riproduci il suono di scarica elettrica
       developer.log('ElectricEelEnemy: riproduzione audio della scarica');
-      AudioManager.playSoundEffect(AudioManager.electroShockFile, volume: 2.0);
+      AudioManager.playSoundEffect(AudioManager.electroShockFile, volume: 1.0);
       
       // Applica il danno ai pesci vicini
       _applyShockDamage();

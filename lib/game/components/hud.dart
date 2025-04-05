@@ -122,6 +122,9 @@ class HealthBar extends PositionComponent with HasGameRef {
       _previousHealth = _currentHealth;
       _currentHealth = newHealth;
       
+      // Debug log per tracciare gli aggiornamenti della barra della salute
+      print("HealthBar: aggiornamento salute da $_previousHealth a $_currentHealth");
+      
       // Attiva l'effetto di pulsazione
       _isPulsing = true;
       _pulseTimer = _pulseDuration;
@@ -216,7 +219,7 @@ class HealthBar extends PositionComponent with HasGameRef {
   
   @override
   void render(Canvas canvas) {
-    // Disegna lo sfondo della barra
+    // Assicurati che la barra sia sempre visibile
     final backgroundRect = Rect.fromLTWH(0, 0, size.x, size.y);
     canvas.drawRRect(
       RRect.fromRectAndRadius(backgroundRect, const Radius.circular(5)),
@@ -224,7 +227,8 @@ class HealthBar extends PositionComponent with HasGameRef {
     );
     
     // Disegna la barra della salute attuale (animata)
-    final healthWidth = size.x * (_displayHealth / 100);
+    // Assicurati che healthWidth non sia mai negativo
+    final healthWidth = max(0.0, size.x * (_displayHealth / 100));
     final healthRect = Rect.fromLTWH(0, 0, healthWidth, size.y);
     
     // Calcola il colore della barra in base alla percentuale di salute
