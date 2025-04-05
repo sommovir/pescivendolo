@@ -3,20 +3,21 @@ import 'dart:developer' as developer;
 
 import 'package:flame/game.dart';
 import 'package:flame/input.dart';
-import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
+import 'package:flame/components.dart';
 import 'package:flame/particles.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:pescivendolo_game/game/audio_manager.dart';
-import 'package:pescivendolo_game/game/components/player_fish.dart';
 import 'package:pescivendolo_game/game/components/enemy_fish.dart';
-import 'package:pescivendolo_game/game/components/octopus_enemy.dart';
-import 'package:pescivendolo_game/game/components/jellyfish_enemy.dart';
 import 'package:pescivendolo_game/game/components/electric_eel_enemy.dart';
-import 'package:pescivendolo_game/game/components/swordfish_enemy.dart';
 import 'package:pescivendolo_game/game/components/hud.dart';
-import 'package:pescivendolo_game/game/components/water_background.dart';
+import 'package:pescivendolo_game/game/components/jellyfish_enemy.dart';
+import 'package:pescivendolo_game/game/components/octopus_enemy.dart';
+import 'package:pescivendolo_game/game/components/player_fish.dart';
+import 'package:pescivendolo_game/game/components/shield_effect.dart';
+import 'package:pescivendolo_game/game/components/swordfish_enemy.dart';
+import 'package:pescivendolo_game/game/components/whale_powerup.dart';
 
 class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   late PlayerFish player;
@@ -44,7 +45,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   
   // Timer per il pesce spada
   double _swordfishSpawnTimer = 0;
-  double _swordfishSpawnInterval = 12.0; // Spawn pesce spada ogni 12 secondi (più frequente)
+  double _swordfishSpawnInterval = 8.0; // Spawn pesce spada ogni 8 secondi (ancora più frequente)
   int _maxSimultaneousSwordfish = 1; // Numero massimo di pesci spada simultanei, aumenterà col tempo
   
   // Timer per le bolle
@@ -78,6 +79,17 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   // Stato dell'orientamento
   bool _isLandscapeMode = false;
   bool get isLandscapeMode => _isLandscapeMode;
+  
+  // Parametri per la balena
+  double _whaleSpawnTimer = 0;
+  double _whaleSpawnInterval = 25.0; // Aumentato da 15 a 25 secondi
+  
+  // Parametri per l'invulnerabilità
+  double _invulnerabilityCharge = 0.0; // Carica corrente (0-100%)
+  double _invulnerabilityTimer = 0.0; // Timer per la durata dell'invulnerabilità
+  final double _invulnerabilityDuration = 10.0; // Durata dell'invulnerabilità in secondi
+  bool _isPlayerInvulnerable = false; // Flag per indicare se il giocatore è invulnerabile
+  ShieldEffect? _shieldEffect; // Effetto visivo dello scudo
   
   @override
   Future<void> onLoad() async {
@@ -177,8 +189,10 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       _octopusSpawnTimer += dt;
       if (_octopusSpawnTimer >= _octopusSpawnInterval) {
         _octopusSpawnTimer = 0;
-        // 40% di probabilità di generare un polipetto (aumentata)
-        if (_random.nextDouble() < 0.4) {
+        
+        // Probabilità crescente in base al livello di difficoltà
+        double octopusChance = 0.1 + (_difficultyLevel * 0.03);
+        if (_random.nextDouble() < octopusChance) {
           _spawnOctopus();
         }
       }
@@ -187,8 +201,9 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       _jellyfishSpawnTimer += dt;
       if (_jellyfishSpawnTimer >= _jellyfishSpawnInterval) {
         _jellyfishSpawnTimer = 0;
+        
         // Probabilità crescente in base al livello di difficoltà
-        double jellyfishChance = 0.5 + (_difficultyLevel * 0.05); // Increased base chance from 0.2 to 0.5
+        double jellyfishChance = 0.2 + (_difficultyLevel * 0.05);
         if (_random.nextDouble() < jellyfishChance) {
           _spawnJellyfishSwarm();
         }
@@ -198,6 +213,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       _eelSpawnTimer += dt;
       if (_eelSpawnTimer >= _eelSpawnInterval) {
         _eelSpawnTimer = 0;
+        
         // Probabilità crescente in base al livello di difficoltà
         double eelChance = 0.15 + (_difficultyLevel * 0.04); // Aumentata
         if (_random.nextDouble() < eelChance) {
@@ -216,11 +232,32 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         }
       }
       
+      // Genera balene a intervalli
+      _whaleSpawnTimer += dt;
+      if (_whaleSpawnTimer >= _whaleSpawnInterval) {
+        _whaleSpawnTimer = 0;
+        // Probabilità fissa (le balene sono rare ma più frequenti)
+        double whaleChance = 0.4; // Ridotto da 0.6 a 0.4 (40% di probabilità ogni 25 secondi)
+        if (_random.nextDouble() < whaleChance) {
+          _spawnWhale();
+        }
+      }
+      
       // Genera bolle a intervalli regolari
       _bubbleTimer += dt;
       if (_bubbleTimer >= _bubbleInterval) {
         _bubbleTimer = 0;
         _spawnBubble();
+      }
+      
+      // Aggiorna il timer dell'invulnerabilità se attiva
+      if (_isPlayerInvulnerable) {
+        _invulnerabilityTimer -= dt;
+        
+        // Se il timer scade, disattiva l'invulnerabilità
+        if (_invulnerabilityTimer <= 0) {
+          _deactivateInvulnerability();
+        }
       }
     } catch (e, stackTrace) {
       developer.log('Errore in FishGame.update: $e\n$stackTrace');
@@ -427,6 +464,37 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     }
   }
   
+  void _spawnWhale() {
+    try {
+      developer.log('FishGame: generazione balena');
+      
+      // Calcola la velocità (la balena è più lenta)
+      double baseSpeed = _baseEnemySpeed * 0.4; // 40% della velocità base
+      double speedVariation = _random.nextDouble() * 20.0 - 10.0; // ±10
+      double whaleSpeed = baseSpeed + speedVariation;
+      
+      // La balena appare a sinistra e si muove verso destra
+      double posY = _random.nextDouble() * (size.y - 150) + 75;
+      
+      // Dimensione della balena (molto più grande)
+      double sizeMultiplier = 15.0; // Aumentata da 8.0 a 15.0
+      
+      final whale = WhalePowerup(
+        position: Vector2(
+          -50, // Inizia appena fuori dallo schermo a sinistra
+          posY, // Posizione Y casuale
+        ),
+        speed: whaleSpeed,
+        sizeMultiplier: sizeMultiplier,
+      );
+      
+      add(whale);
+      developer.log('FishGame: balena generata con successo');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame._spawnWhale: $e\n$stackTrace');
+    }
+  }
+  
   void _spawnBubble() {
     try {
       // Crea una bolla in una posizione casuale sul fondo dello schermo
@@ -435,6 +503,7 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
           _random.nextDouble() * size.x,
           size.y + 10, // Inizia appena sotto il bordo inferiore
         ),
+        speed: _random.nextDouble() * 30 + 20, // Velocità casuale tra 20 e 50
         size: Vector2(
           _random.nextDouble() * 10 + 5, // Dimensione casuale tra 5 e 15
           _random.nextDouble() * 10 + 5,
@@ -467,8 +536,15 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   }
   
   void decreaseHealth(double amount) {
+    // Se il giocatore è invulnerabile, non subisce danni
+    if (_isPlayerInvulnerable) {
+      developer.log('FishGame: giocatore invulnerabile, danno ignorato');
+      return;
+    }
+    
+    // Altrimenti applica il danno normalmente
     _health = max(0, _health - amount);
-    AudioManager.playHurtSound(); // Usa il metodo esistente
+    AudioManager.playHurtSound();
     
     if (_health <= 0) {
       // Quando la salute arriva a zero, il giocatore perde
@@ -534,6 +610,11 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         swordfish.removeFromParent();
       });
       
+      children.whereType<WhalePowerup>().forEach((whale) {
+        developer.log('FishGame: rimozione balena');
+        whale.removeFromParent();
+      });
+      
       children.whereType<BubbleComponent>().forEach((bubble) {
         bubble.removeFromParent();
       });
@@ -545,14 +626,15 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       _jellyfishSpawnTimer = 0;
       _eelSpawnTimer = 0;
       _swordfishSpawnTimer = 0;
+      _whaleSpawnTimer = 0;
       _bubbleTimer = 0;
       _difficultyTimer = 0;
       _difficultyLevel = 1;
       _baseEnemySpeed = 100.0;
-      _maxJellyfishInSwarm = 3;
-      _maxSimultaneousSwordfish = 1;
       _health = 100.0;
-      _gameTime = 0.0;
+      _invulnerabilityCharge = 0.0;
+      _invulnerabilityTimer = 0.0;
+      _isPlayerInvulnerable = false;
       
       // Se il giocatore è stato rimosso, ricrealo
       if (!children.contains(player)) {
@@ -583,6 +665,69 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       developer.log('FishGame: motore di gioco ripreso con successo');
     } catch (e, stackTrace) {
       developer.log('Errore in FishGame.reset: $e\n$stackTrace');
+    }
+  }
+  
+  // Metodi per la gestione dell'invulnerabilità
+  double get invulnerabilityCharge => _invulnerabilityCharge;
+  double get invulnerabilityTimer => _invulnerabilityTimer;
+  bool get isPlayerInvulnerable => _isPlayerInvulnerable;
+  
+  void increaseInvulnerabilityCharge(double amount) {
+    // Aggiungi carica solo se non siamo già invulnerabili
+    if (!_isPlayerInvulnerable) {
+      _invulnerabilityCharge = min(100.0, _invulnerabilityCharge + amount);
+      developer.log('FishGame: carica invulnerabilità a $_invulnerabilityCharge%');
+    }
+  }
+  
+  void activateInvulnerability() {
+    try {
+      if (_isPlayerInvulnerable) return;
+      
+      developer.log('FishGame: attivazione invulnerabilità');
+      _isPlayerInvulnerable = true;
+      _invulnerabilityTimer = _invulnerabilityDuration;
+      _invulnerabilityCharge = 0; // Resetta la carica
+      
+      // Riproduci il suono di attivazione dello scudo
+      developer.log('FishGame: riproduzione suono scudo...');
+      AudioManager.playShieldSound(); // Usiamo il nuovo suono specifico per lo scudo
+      developer.log('FishGame: richiesta riproduzione suono scudo completata');
+      
+      // Aggiungi effetto visivo di scudo attorno al giocatore
+      if (_shieldEffect != null && _shieldEffect!.isMounted) {
+        _shieldEffect!.removeFromParent();
+      }
+      
+      _shieldEffect = ShieldEffect(
+        radius: player.size.length * 0.6, // Ridotto da 0.7 a 0.6 per un migliore adattamento
+        duration: _invulnerabilityDuration,
+      );
+      
+      // Nota: ora lo shield è già configurato con anchor=Anchor.center nel suo costruttore
+      player.add(_shieldEffect!);
+      
+      developer.log('FishGame: invulnerabilità attivata per $_invulnerabilityDuration secondi');
+    } catch (e, stackTrace) {
+      developer.log('ERRORE in FishGame.activateInvulnerability: $e\n$stackTrace');
+    }
+  }
+  
+  void _deactivateInvulnerability() {
+    try {
+      developer.log('FishGame: disattivazione invulnerabilità');
+      _isPlayerInvulnerable = false;
+      
+      // Rimuovi l'effetto visivo di scudo
+      if (_shieldEffect != null && _shieldEffect!.isMounted) {
+        _shieldEffect!.removeFromParent();
+        _shieldEffect = null;
+      }
+      
+      developer.log('FishGame: invulnerabilità disattivata');
+    } catch (e, stackTrace) {
+      developer.log('ERRORE in FishGame._deactivateInvulnerability: $e\n$stackTrace');
     }
   }
   
@@ -676,8 +821,13 @@ class BubbleComponent extends PositionComponent {
   
   BubbleComponent({
     required Vector2 position,
+    required double speed,
     required Vector2 size,
-  }) : super(position: position, size: size);
+  }) : super(position: position, size: size) {
+    this.speed = speed;
+  }
+  
+  late double speed;
   
   @override
   Future<void> onLoad() async {

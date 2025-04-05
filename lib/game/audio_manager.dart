@@ -30,6 +30,9 @@ class AudioManager {
   // Nome del file per il suono della scarica elettrica
   static const String electroShockFile = 'electro_shock.wav';
   
+  // Nome del file per il suono dello scudo di invulnerabilità
+  static const String shieldSoundFile = 'shield.mp3';
+  
   // Durata approssimativa del file musicale in secondi
   // Questo valore deve essere regolato in base alla durata effettiva del file
   static const int musicDurationSeconds = 60;
@@ -40,6 +43,7 @@ class AudioManager {
   static bool _musicAvailable = false;
   static bool _ambientSoundAvailable = false;
   static bool _electroShockAvailable = false;
+  static bool _shieldSoundAvailable = false;
   
   // Variabili per limitare la riproduzione troppo frequente
   static DateTime _lastEatSound = DateTime.now().subtract(const Duration(seconds: 1));
@@ -110,10 +114,19 @@ class AudioManager {
         developer.log('AudioManager: ERRORE caricamento electroShockFile: $e\n$stackTrace');
       }
       
+      try {
+        developer.log('AudioManager: caricamento shieldSoundFile: $shieldSoundFile');
+        await FlameAudio.audioCache.load(shieldSoundFile);
+        _shieldSoundAvailable = true;
+        developer.log('AudioManager: shieldSoundFile caricato con successo');
+      } catch (e, stackTrace) {
+        developer.log('AudioManager: ERRORE caricamento shieldSoundFile: $e\n$stackTrace');
+      }
+      
       _initialized = true;
       developer.log('AudioManager: inizializzazione completata. Suoni disponibili: '
           'music=$_musicAvailable, ambient=$_ambientSoundAvailable, '
-          'hurt=$_hurtSoundAvailable, eat=$_eatSoundAvailable, electroShock=$_electroShockAvailable');
+          'hurt=$_hurtSoundAvailable, eat=$_eatSoundAvailable, electroShock=$_electroShockAvailable, shield=$_shieldSoundAvailable');
     } catch (e, stackTrace) {
       developer.log('Errore in AudioManager.initialize: $e\n$stackTrace');
     }
@@ -327,6 +340,28 @@ class AudioManager {
       developer.log('AudioManager: effetto sonoro riprodotto con successo');
     } catch (e, stackTrace) {
       developer.log('ERRORE in AudioManager.playSoundEffect: $e\n$stackTrace');
+    }
+  }
+  
+  // Metodo specifico per riprodurre il suono dello scudo
+  static void playShieldSound() {
+    if (!_shieldSoundAvailable) {
+      developer.log('AudioManager: playShieldSound - suono non disponibile');
+      return;
+    }
+    
+    try {
+      // Nei browser web, l'audio può essere riprodotto solo dopo un'interazione dell'utente
+      if (!_userInteracted) {
+        developer.log('AudioManager: impossibile riprodurre suono scudo, utente non ha ancora interagito con la pagina');
+        return;
+      }
+      
+      developer.log('AudioManager: riproduzione suono scudo');
+      FlameAudio.play(shieldSoundFile, volume: 1.0);
+      developer.log('AudioManager: suono scudo riprodotto con successo');
+    } catch (e, stackTrace) {
+      developer.log('ERRORE in AudioManager.playShieldSound: $e\n$stackTrace');
     }
   }
   
