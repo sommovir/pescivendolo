@@ -8,15 +8,22 @@ import 'package:flame/components.dart';
 import 'package:flame/particles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pescivendolo_game/game/ally_manager.dart';
 import 'package:pescivendolo_game/game/audio_manager.dart';
+import 'package:pescivendolo_game/game/coin_manager.dart';
+import 'package:pescivendolo_game/game/components/coin_pickup.dart';
 import 'package:pescivendolo_game/game/components/enemy_fish.dart';
 import 'package:pescivendolo_game/game/components/electric_eel_enemy.dart';
-import 'package:pescivendolo_game/game/components/hud.dart';
+import 'package:pescivendolo_game/game/components/exabiss_ally.dart';
 import 'package:pescivendolo_game/game/components/jellyfish_enemy.dart';
+import 'package:pescivendolo_game/game/components/marmo_carpa_ally.dart';
 import 'package:pescivendolo_game/game/components/octopus_enemy.dart';
+import 'package:pescivendolo_game/game/components/orca_enemy.dart';
 import 'package:pescivendolo_game/game/components/player_fish.dart';
+import 'package:pescivendolo_game/game/components/sapphire_fish.dart';
 import 'package:pescivendolo_game/game/components/shield_effect.dart';
 import 'package:pescivendolo_game/game/components/swordfish_enemy.dart';
+import 'package:pescivendolo_game/game/components/treasure_pickup.dart';
 import 'package:pescivendolo_game/game/components/whale_powerup.dart';
 
 class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
@@ -29,8 +36,8 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   
   // Timer per lo spawn
   double _spawnTimer = 0;
-  double _spawnInterval = 2.0; // Spawn enemy every 2 seconds
-  
+  double _spawnInterval = 1.3; // Spawn enemy every 1.3 seconds (aumentato da 2.0: arrivano più spesso già dall'inizio)
+
   // Timer per il polipetto
   double _octopusSpawnTimer = 0;
   double _octopusSpawnInterval = 10.0; // Spawn octopus every 10 seconds (più frequente)
@@ -67,12 +74,19 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   
   // Getter pubblico per il tempo di gioco
   double get gameTime => _gameTime;
-  
-  late Hud hud;
-  
+
+  // Alleati attivi nella partita corrente (se posseduti/attivati)
+  MarmoCarpaAlly? _marmoCarpa;
+  ExabissAlly? _exabiss;
+
   // Flag per indicare se il gioco è iniziato
   bool _gameStarted = false;
-  
+
+  // Flag per indicare se il gioco è in pausa (messo in pausa dall'utente,
+  // a differenza della pausa "tecnica" prima dello start o dopo il game over)
+  bool _isPaused = false;
+  bool get isPaused => _isPaused;
+
   // Tasti premuti
   final Set<LogicalKeyboardKey> _keysPressed = {};
   
@@ -83,7 +97,27 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   // Parametri per la balena
   double _whaleSpawnTimer = 0;
   double _whaleSpawnInterval = 25.0; // Aumentato da 15 a 25 secondi
-  
+
+  // Parametri per il PesceZaffiro: pesce raro che dà molti punti e monete
+  double _sapphireFishSpawnTimer = 0;
+  final double _sapphireFishSpawnInterval = 15.0; // Un tentativo ogni 15 secondi
+  final double _sapphireFishSpawnChance = 0.25; // Abbastanza raro
+
+  // Parametri per le monetine che cadono dall'alto
+  double _coinSpawnTimer = 0;
+  final double _coinSpawnInterval = 1.8;
+
+  // Parametri per i tesori semi-statici nella parte bassa dello schermo
+  double _treasureSpawnTimer = 0;
+  final double _treasureSpawnInterval = 11.0;
+
+  // Parametri per l'orca: nemico raro e molto pericoloso che inizia a
+  // comparire solo dopo un po' di tempo di gioco.
+  double _orcaSpawnTimer = 0;
+  final double _orcaSpawnInterval = 14.0; // Un tentativo di spawn ogni 14 secondi
+  final double _orcaFirstAppearanceTime = 40.0; // Non compare prima di 40 secondi di gioco
+  int _maxSimultaneousOrcas = 1; // Aumenta con la difficoltà, come i pesci spada
+
   // Parametri per l'invulnerabilità
   double _invulnerabilityCharge = 0.0; // Carica corrente (0-100%)
   double _invulnerabilityTimer = 0.0; // Timer per la durata dell'invulnerabilità
@@ -113,12 +147,17 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       // Aggiungi il pesce giocatore
       player = PlayerFish();
       add(player);
-      
-      developer.log('FishGame: creazione HUD');
-      // Aggiungi l'HUD
-      hud = Hud();
-      add(hud);
-      
+
+      // NOTA: punteggio, barra della vita e barra dell'invulnerabilità NON
+      // sono più un componente Flame nel mondo di gioco (era il vecchio
+      // "Hud"): vivendo in "game space" (scalato dalla camera/viewfinder),
+      // un resize/orientamento problematico poteva spostarli fuori
+      // dall'area visibile senza che il componente venisse davvero
+      // smontato, facendoli sembrare "spariti" in modo intermittente e non
+      // riproducibile. Ora sono un overlay Flutter (ScoreHealthHud in
+      // main.dart) posizionato in coordinate schermo reali, indipendenti
+      // dalla camera di gioco.
+
       // Mostra l'overlay di avvio
       overlays.add('startGame');
       
@@ -138,7 +177,12 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       
       // Rimuovi l'overlay di avvio
       overlays.remove('startGame');
-      
+
+      // Le monete sono per-partita: azzerale anche al primo avvio, per non
+      // ripartire con un saldo rimasto da una sessione precedente mai
+      // arrivata a un game over/retry.
+      CoinManager.resetCoins();
+
       // Imposta il flag di interazione utente per l'audio
       AudioManager.setUserInteracted();
       
@@ -148,16 +192,90 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       
       // Genera il primo nemico
       _spawnEnemy();
-      
+
+      // Fa comparire gli alleati già posseduti
+      _summonOwnedAllies();
+
       // Imposta il flag di gioco iniziato
       _gameStarted = true;
-      
+
       // Riprendi il motore di gioco
       resumeEngine();
-      
+
       developer.log('FishGame: gioco avviato con successo');
     } catch (e, stackTrace) {
       developer.log('Errore in FishGame.startGame: $e\n$stackTrace');
+    }
+  }
+
+  /// Attiva nella partita corrente tutti gli alleati già posseduti
+  /// (chiamato all'avvio e dopo un reset).
+  void _summonOwnedAllies() {
+    for (final type in AllyType.values) {
+      if (AllyManager.isOwned(type)) {
+        summonAlly(type);
+      }
+    }
+  }
+
+  /// Fa comparire l'alleato [type] nella partita in corso, se non è già
+  /// presente. Chiamato sia dopo l'avvio/reset (per gli alleati già
+  /// posseduti) sia subito dopo un acquisto effettuato durante il gioco.
+  void summonAlly(AllyType type) {
+    try {
+      switch (type) {
+        case AllyType.marmoCarpa:
+          if (_marmoCarpa != null && _marmoCarpa!.isMounted) return;
+          _marmoCarpa = MarmoCarpaAlly(position: Vector2(140, size.y - 90));
+          add(_marmoCarpa!);
+          developer.log('FishGame: Marmo Carpa evocato');
+          break;
+        case AllyType.exabiss:
+          if (_exabiss != null && _exabiss!.isMounted) return;
+          _exabiss = ExabissAlly(posY: size.y / 2);
+          add(_exabiss!);
+          developer.log('FishGame: Exabiss evocato');
+          break;
+      }
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame.summonAlly: $e\n$stackTrace');
+    }
+  }
+
+  // Mette in pausa il gioco su richiesta dell'utente (pulsante di pausa o
+  // tasto rapido). Non ha effetto prima dello start o dopo il game over.
+  void pauseGame() {
+    if (!_gameStarted || _isPaused) return;
+    try {
+      developer.log('FishGame: gioco messo in pausa');
+      _isPaused = true;
+      pauseEngine();
+      AudioManager.pauseAll();
+      overlays.add('paused');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame.pauseGame: $e\n$stackTrace');
+    }
+  }
+
+  // Riprende il gioco dopo pauseGame()
+  void resumeGame() {
+    if (!_isPaused) return;
+    try {
+      developer.log('FishGame: gioco ripreso dalla pausa');
+      _isPaused = false;
+      overlays.remove('paused');
+      resumeEngine();
+      AudioManager.resumeAll();
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame.resumeGame: $e\n$stackTrace');
+    }
+  }
+
+  void togglePause() {
+    if (_isPaused) {
+      resumeGame();
+    } else {
+      pauseGame();
     }
   }
 
@@ -242,7 +360,42 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
           _spawnWhale();
         }
       }
-      
+
+      // Genera orche solo dopo che il giocatore ha superato il tempo minimo
+      if (_gameTime >= _orcaFirstAppearanceTime) {
+        _orcaSpawnTimer += dt;
+        if (_orcaSpawnTimer >= _orcaSpawnInterval) {
+          _orcaSpawnTimer = 0;
+          double orcaChance = 0.5;
+          if (_random.nextDouble() < orcaChance) {
+            _spawnOrca();
+          }
+        }
+      }
+
+      // Genera il PesceZaffiro a intervalli, raramente
+      _sapphireFishSpawnTimer += dt;
+      if (_sapphireFishSpawnTimer >= _sapphireFishSpawnInterval) {
+        _sapphireFishSpawnTimer = 0;
+        if (_random.nextDouble() < _sapphireFishSpawnChance) {
+          _spawnSapphireFish();
+        }
+      }
+
+      // Genera monetine che cadono dall'alto
+      _coinSpawnTimer += dt;
+      if (_coinSpawnTimer >= _coinSpawnInterval) {
+        _coinSpawnTimer = 0;
+        _spawnCoin();
+      }
+
+      // Genera tesori semi-statici nella parte bassa dello schermo
+      _treasureSpawnTimer += dt;
+      if (_treasureSpawnTimer >= _treasureSpawnInterval) {
+        _treasureSpawnTimer = 0;
+        _spawnTreasure();
+      }
+
       // Genera bolle a intervalli regolari
       _bubbleTimer += dt;
       if (_bubbleTimer >= _bubbleInterval) {
@@ -285,6 +438,9 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       
       // Aumenta il numero massimo di pesci spada simultanei
       _maxSimultaneousSwordfish = min(_maxSimultaneousSwordfish + 1, 3); // Massimo 3 pesci spada
+
+      // Aumenta il numero massimo di orche simultanee
+      _maxSimultaneousOrcas = min(_maxSimultaneousOrcas + 1, 3); // Massimo 3 orche
     }
   }
   
@@ -494,7 +650,115 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       developer.log('Errore in FishGame._spawnWhale: $e\n$stackTrace');
     }
   }
-  
+
+  void _spawnOrca() {
+    try {
+      // Con l'avanzare della difficoltà possono comparire più orche insieme
+      int orcaCount = _random.nextInt(_maxSimultaneousOrcas) + 1;
+      developer.log('FishGame: generazione di $orcaCount orca/e');
+
+      for (int i = 0; i < orcaCount; i++) {
+        // Velocità discreta: un po' sopra la velocità base dei nemici normali
+        double speedVariation = _random.nextDouble() * 20.0 - 10.0; // ±10
+        double orcaSpeed = (_baseEnemySpeed * 1.15) + speedVariation;
+
+        double posY = _random.nextDouble() * (size.y - 150) + 75;
+
+        // Dimensione raddoppiata rispetto alla versione iniziale
+        double sizeMultiplier = 28.0 + _random.nextDouble() * 4.0; // Da 28x a 32x
+
+        final orca = OrcaEnemy(
+          position: Vector2(
+            size.x + 60 + (i * 120), // Sfalsa leggermente l'ingresso se sono più di una
+            posY,
+          ),
+          speed: orcaSpeed,
+          sizeMultiplier: sizeMultiplier,
+        );
+        add(orca);
+      }
+
+      developer.log('FishGame: orca/e generata/e con successo');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame._spawnOrca: $e\n$stackTrace');
+    }
+  }
+
+  void _spawnSapphireFish() {
+    try {
+      // Evento raro: un branco di 3-7 PesciZaffiro tutti nella parte alta.
+      const swarmChance = 0.08;
+      if (_random.nextDouble() < swarmChance) {
+        final count = 3 + _random.nextInt(5); // 3-7
+        developer.log('FishGame: evento raro! branco di $count PesceZaffiro');
+        for (int i = 0; i < count; i++) {
+          final posY = size.y * 0.05 + _random.nextDouble() * (size.y * 0.2); // parte alta
+          final posX = size.x + 50 + i * 45.0;
+          add(SapphireFish(position: Vector2(posX, posY)));
+        }
+      } else {
+        add(SapphireFish(position: Vector2(size.x + 50, _sapphireFishPreferredY())));
+      }
+
+      developer.log('FishGame: PesceZaffiro generato con successo');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame._spawnSapphireFish: $e\n$stackTrace');
+    }
+  }
+
+  /// Posizione Y che predilige la fascia medio-alta dello schermo (15%-55%
+  /// dell'altezza), lasciando comunque una piccola probabilità di comparire
+  /// altrove per varietà.
+  double _sapphireFishPreferredY() {
+    if (_random.nextDouble() < 0.85) {
+      return size.y * 0.15 + _random.nextDouble() * (size.y * 0.4);
+    }
+    return _random.nextDouble() * (size.y - 100) + 50;
+  }
+
+  void _spawnCoin() {
+    try {
+      final posX = _random.nextDouble() * (size.x - 60) + 30;
+      // monetina2 (valore 10) è più rara di monetina_1 (valore 1)
+      final isBigCoin = _random.nextDouble() < 0.2;
+
+      final coin = CoinPickup(
+        position: Vector2(posX, -30),
+        value: isBigCoin ? 10 : 1,
+        assetName: isBigCoin ? 'monetina2.webp' : 'monetina_1.webp',
+        size: isBigCoin ? 80 : 64, // raddoppiate: erano troppo piccole per notarle
+      );
+      add(coin);
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame._spawnCoin: $e\n$stackTrace');
+    }
+  }
+
+  void _spawnTreasure() {
+    try {
+      // Rarità proporzionale: tesoro1 comune, tesoro2 medio, tesoro3 raro
+      final roll = _random.nextDouble();
+      final TreasureTier tier;
+      if (roll < 0.6) {
+        tier = TreasureTier.one;
+      } else if (roll < 0.9) {
+        tier = TreasureTier.two;
+      } else {
+        tier = TreasureTier.three;
+      }
+
+      // Entra da destra e scorre verso sinistra, come i pesci
+      final posX = size.x + 60;
+      final posY = size.y * 0.7 + _random.nextDouble() * (size.y * 0.22); // parte bassa
+
+      final treasure = TreasurePickup(position: Vector2(posX, posY), tier: tier);
+      add(treasure);
+      developer.log('FishGame: tesoro generato (tier $tier, ${treasure.coinValue} monete)');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame._spawnTreasure: $e\n$stackTrace');
+    }
+  }
+
   void _spawnBubble() {
     try {
       // Crea una bolla in una posizione casuale sul fondo dello schermo
@@ -519,6 +783,15 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   KeyEventResult onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
     _keysPressed.clear();
     _keysPressed.addAll(keysPressed);
+
+    // Scorciatoia da tastiera per la pausa (Esc o P)
+    if (event is KeyDownEvent &&
+        _gameStarted &&
+        (event.logicalKey == LogicalKeyboardKey.escape ||
+            event.logicalKey == LogicalKeyboardKey.keyP)) {
+      togglePause();
+    }
+
     return KeyEventResult.handled;
   }
   
@@ -577,13 +850,15 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   }
   
   // Aggiungiamo il metodo reset che era presente nella versione precedente
-  void reset() {
+  Future<void> reset() async {
     try {
       developer.log('FishGame: reset del gioco');
-      
-      // Ferma tutti gli audio in corso prima di qualsiasi altra operazione
-      AudioManager.stopAll();
-      
+
+      // Ferma tutti gli audio in corso prima di qualsiasi altra operazione.
+      // Ora che stop*() aspetta davvero l'arresto dell'AudioPlayer, non serve
+      // più un ritardo "a occhio" prima di far ripartire musica e ambientale.
+      await AudioManager.stopAll();
+
       // Rimuovi tutti i nemici esistenti
       children.whereType<EnemyFish>().forEach((enemy) {
         developer.log('FishGame: rimozione pesce nemico');
@@ -614,11 +889,35 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         developer.log('FishGame: rimozione balena');
         whale.removeFromParent();
       });
-      
+
+      children.whereType<OrcaEnemy>().forEach((orca) {
+        developer.log('FishGame: rimozione orca');
+        orca.removeFromParent();
+      });
+
+      // Rimuove gli alleati: verranno ri-evocati (con HP/energia ripristinate)
+      // più sotto, se ancora posseduti.
+      _marmoCarpa?.removeFromParent();
+      _marmoCarpa = null;
+      _exabiss?.removeFromParent();
+      _exabiss = null;
+
+      children.whereType<SapphireFish>().forEach((fish) {
+        developer.log('FishGame: rimozione PesceZaffiro');
+        fish.removeFromParent();
+      });
+
+      children.whereType<CoinPickup>().forEach((coin) => coin.removeFromParent());
+      children.whereType<TreasurePickup>().forEach((treasure) => treasure.removeFromParent());
+
       children.whereType<BubbleComponent>().forEach((bubble) {
         bubble.removeFromParent();
       });
-      
+
+      // Le monete vanno guadagnate e spese entro la partita, non risparmiate
+      // tra un tentativo e l'altro.
+      CoinManager.resetCoins();
+
       // Resetta lo stato del gioco
       score = 0;
       _spawnTimer = 0;
@@ -627,15 +926,36 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       _eelSpawnTimer = 0;
       _swordfishSpawnTimer = 0;
       _whaleSpawnTimer = 0;
+      _orcaSpawnTimer = 0;
+      _maxSimultaneousOrcas = 1;
+      _sapphireFishSpawnTimer = 0;
+      _coinSpawnTimer = 0;
+      _treasureSpawnTimer = 0;
       _bubbleTimer = 0;
+      // _gameTime non veniva mai resettato: senza questo, dopo un "Riprova"
+      // il tempo di gioco continuava ad accumularsi dalla partita
+      // precedente, facendo comparire subito le orche invece di rispettare
+      // il ritardo iniziale.
+      _gameTime = 0.0;
       _difficultyTimer = 0;
       _difficultyLevel = 1;
       _baseEnemySpeed = 100.0;
+      // _updateDifficulty riduce progressivamente questi intervalli e
+      // aumenta questi contatori: senza reset, dopo un game over la
+      // partita successiva ripartiva già alla difficoltà accumulata in
+      // quella precedente (nemici troppo frequenti, sciami troppo grandi).
+      _spawnInterval = 1.3;
+      _octopusSpawnInterval = 10.0;
+      _jellyfishSpawnInterval = 8.0;
+      _eelSpawnInterval = 5.0;
+      _maxSimultaneousSwordfish = 1;
+      _maxJellyfishInSwarm = 3;
       _health = 100.0;
       _invulnerabilityCharge = 0.0;
       _invulnerabilityTimer = 0.0;
       _isPlayerInvulnerable = false;
-      
+      _isPaused = false;
+
       // Se il giocatore è stato rimosso, ricrealo
       if (!children.contains(player)) {
         player = PlayerFish();
@@ -647,19 +967,21 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         developer.log('FishGame: posizione del giocatore reimpostata');
       }
       
-      // Rimuovi l'overlay di game over se presente
+      // Rimuovi gli overlay di game over/pausa se presenti
       overlays.remove('gameOver');
-      
-      // Riavvia la musica e i suoni ambientali dopo un breve ritardo
-      // per assicurarsi che l'audio precedente sia completamente fermato
-      Future.delayed(const Duration(milliseconds: 500), () {
-        AudioManager.playBackgroundMusic();
-        AudioManager.playAmbientSound();
-      });
-      
+      overlays.remove('paused');
+
+      // Riavvia la musica e i suoni ambientali: a questo punto stopAll() ha
+      // già completato l'arresto, quindi si può far ripartire subito
+      await AudioManager.playBackgroundMusic();
+      await AudioManager.playAmbientSound();
+
       // Genera un nuovo nemico per iniziare
       _spawnEnemy();
-      
+
+      // Ri-evoca gli alleati posseduti
+      _summonOwnedAllies();
+
       // Riprendi il motore di gioco
       resumeEngine();
       developer.log('FishGame: motore di gioco ripreso con successo');
@@ -718,7 +1040,11 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     try {
       developer.log('FishGame: disattivazione invulnerabilità');
       _isPlayerInvulnerable = false;
-      
+
+      // shield.mp3 dura più a lungo dei 10 secondi di invulnerabilità:
+      // va fermato esplicitamente qui, altrimenti continua a suonare da solo.
+      AudioManager.stopShieldSound();
+
       // Rimuovi l'effetto visivo di scudo
       if (_shieldEffect != null && _shieldEffect!.isMounted) {
         _shieldEffect!.removeFromParent();

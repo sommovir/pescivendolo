@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pescivendolo_game/game/fish_game.dart';
 import 'package:pescivendolo_game/game/audio_manager.dart';
+import 'package:pescivendolo_game/game/ally_shop_overlay.dart';
 import 'package:pescivendolo_game/game/components/water_background.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:animated_text_kit/animated_text_kit.dart';
@@ -57,37 +58,48 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _isFullScreen = false;
   bool _isLandscape = false;
 
+  // Le metriche del viewport (didChangeMetrics) cambiano molto più spesso di
+  // un vero cambio di orientamento: sui browser mobile, ad esempio, la barra
+  // degli indirizzi che compare/scompare durante lo scroll genera lo stesso
+  // evento. Senza un debounce, ogni evento forza un onGameResize + un
+  // resumeEngine sul gioco, che può causare glitch visivi (es. l'HUD che
+  // sparisce per un frame). Il debounce raggruppa gli eventi ravvicinati in
+  // un solo aggiornamento.
+  darts.Timer? _metricsDebounce;
+
   @override
   void initState() {
     super.initState();
     _game = FishGame();
-    
+
     // Registra l'observer per i cambiamenti di orientamento
     WidgetsBinding.instance.addObserver(this);
   }
-  
+
   @override
   void dispose() {
     // Rimuovi l'observer quando il widget viene distrutto
     WidgetsBinding.instance.removeObserver(this);
+    _metricsDebounce?.cancel();
     super.dispose();
   }
-  
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    
+
     // Ora possiamo controllare l'orientamento in modo sicuro
     _checkOrientation();
   }
-  
+
   @override
   void didChangeMetrics() {
     // Questo metodo viene chiamato quando cambiano le metriche (incluso l'orientamento)
     super.didChangeMetrics();
-    _checkOrientation();
+    _metricsDebounce?.cancel();
+    _metricsDebounce = darts.Timer(const Duration(milliseconds: 200), _checkOrientation);
   }
-  
+
   void _checkOrientation() {
     // Verifichiamo che il context sia montato prima di usare MediaQuery
     if (!mounted) return;
@@ -140,6 +152,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               'gameOver': (context, game) => GameOverOverlay(game: game),
               'gameHud': (context, game) => GameHudOverlay(game: game),
               'touchControls': (context, game) => TouchControlsOverlay(game: game),
+              'paused': (context, game) => PausedOverlay(game: game),
             },
             initialActiveOverlays: const ['startGame'],
           ),
@@ -195,9 +208,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         // Forza l'aggiornamento delle dimensioni del gioco
         _updateGameSize();
         
-        // Riavvia la musica solo se il gioco è già iniziato
+        // Riavvia musica e suono ambientale solo se il gioco è già iniziato
         if (!_game.overlays.isActive('startGame')) {
           AudioManager.playBackgroundMusic();
+          AudioManager.playAmbientSound();
         }
       });
     } catch (e) {
@@ -221,8 +235,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       canvasElement.height = windowHeight;
     }
     
-    // Forza un ridisegno del gioco
-    _game.resumeEngine();
+    // Forza un ridisegno del gioco, ma solo se il gioco dovrebbe davvero
+    // essere in esecuzione: altrimenti un resize durante la schermata di
+    // avvio, il game over o una pausa manuale lo farebbe ripartire da solo.
+    if (_game.overlays.isActive('gameHud') && !_game.isPaused) {
+      _game.resumeEngine();
+    }
   }
 }
 
@@ -856,72 +874,502 @@ class GameHudOverlay extends StatefulWidget {
 }
 
 class _GameHudOverlayState extends State<GameHudOverlay> {
-  int _seconds = 0;
-  int _minutes = 0;
   darts.Timer? _gameTimer;
-  
+
   @override
   void initState() {
     super.initState();
-    
-    // Avvia timer per il tempo di gioco
+
+    // Il tempo mostrato viene letto direttamente da widget.game.gameTime
+    // (che FishGame azzera già in reset() e non avanza mentre il motore è
+    // in pausa): questo timer serve solo a far ridisegnare il widget ogni
+    // secondo, non tiene più un proprio conteggio indipendente che
+    // altrimenti non si sarebbe mai risincronizzato dopo un "Riprova".
     _gameTimer = darts.Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _seconds++;
-        if (_seconds >= 60) {
-          _seconds = 0;
-          _minutes++;
-        }
-      });
+      if (mounted) setState(() {});
     });
   }
-  
+
   @override
   void dispose() {
     _gameTimer?.cancel();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     // Formatta il tempo trascorso in minuti:secondi
-    final minutes = _minutes.toString().padLeft(2, '0');
-    final seconds = _seconds.toString().padLeft(2, '0');
+    final totalSeconds = widget.game.gameTime.floor();
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
     final timeString = '$minutes:$seconds';
     
-    return Positioned(
-      top: 10,
-      left: 0,
-      right: 0,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.5),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.lightBlueAccent.withOpacity(0.5), width: 1),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.timer,
-                color: Colors.white,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                timeString,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+    return Stack(
+      children: [
+        Positioned(
+          top: 10,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Pulsante pausa
+                Material(
+                  color: Colors.black.withOpacity(0.5),
+                  shape: const CircleBorder(
+                    side: BorderSide(color: Colors.white24, width: 1),
+                  ),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => widget.game.pauseGame(),
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.pause,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 10),
+                // Pulsante impostazioni audio
+                Material(
+                  color: Colors.black.withOpacity(0.5),
+                  shape: const CircleBorder(
+                    side: BorderSide(color: Colors.white24, width: 1),
+                  ),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (_) => const VolumeSettingsDialog(),
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.volume_up,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // Cronometro
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.lightBlueAccent.withOpacity(0.5), width: 1),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.timer,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        timeString,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
+
+        // Punteggio, barra della vita e barra dell'invulnerabilità.
+        Positioned(
+          top: 10,
+          left: 10,
+          child: ScoreHealthHud(game: widget.game),
+        ),
+
+        // Negozio alleati, sotto la barra della vita (in alto a sinistra)
+        Positioned(
+          top: 90,
+          left: 10,
+          child: AllyShopRow(game: widget.game),
+        ),
+      ],
+    );
+  }
+}
+
+// Punteggio, barra della vita e barra dell'invulnerabilità.
+//
+// Vive nel layer Flutter (overlay), non come componente Flame nel mondo di
+// gioco: leggendo lo stato direttamente da FishGame ed essendo posizionato
+// in coordinate schermo reali via Positioned, non dipende in alcun modo
+// dalla camera/viewfinder di Flame, che in passato causava la sparizione
+// intermittente di questi elementi durante resize/cambi di orientamento.
+class ScoreHealthHud extends StatefulWidget {
+  final FishGame game;
+
+  const ScoreHealthHud({super.key, required this.game});
+
+  @override
+  State<ScoreHealthHud> createState() => _ScoreHealthHudState();
+}
+
+class _ScoreHealthHudState extends State<ScoreHealthHud> {
+  darts.Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshTimer = darts.Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final game = widget.game;
+    final showInvulnerabilityBar = game.isPlayerInvulnerable || game.invulnerabilityCharge > 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Punteggio: ${game.score}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(blurRadius: 4, color: Colors.black, offset: Offset(2, 2))],
+          ),
+        ),
+        const SizedBox(height: 6),
+        CustomPaint(
+          size: const Size(200, 20),
+          painter: _HealthBarPainter(health: game.health),
+        ),
+        if (showInvulnerabilityBar) ...[
+          const SizedBox(height: 4),
+          CustomPaint(
+            size: const Size(200, 15),
+            painter: _InvulnerabilityBarPainter(
+              charge: game.invulnerabilityCharge,
+              timer: game.invulnerabilityTimer,
+              isInvulnerable: game.isPlayerInvulnerable,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _HealthBarPainter extends CustomPainter {
+  final double health;
+
+  _HealthBarPainter({required this.health});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final backgroundRect = Rect.fromLTWH(0, 0, size.width, size.height);
+    final rrect = RRect.fromRectAndRadius(backgroundRect, const Radius.circular(5));
+    canvas.drawRRect(rrect, Paint()..color = Colors.grey.shade800);
+
+    final healthFraction = (health / 100).clamp(0.0, 1.0);
+    final healthWidth = size.width * healthFraction;
+    final healthColor = Color.lerp(Colors.red, Colors.green, healthFraction)!;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, healthWidth, size.height), const Radius.circular(5)),
+      Paint()..color = healthColor,
+    );
+
+    final tickPaint = Paint()
+      ..color = Colors.white.withOpacity(0.3)
+      ..strokeWidth = 1;
+    for (int i = 1; i < 10; i++) {
+      final x = size.width * (i / 10);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), tickPaint);
+    }
+
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: '${health.toInt()}%',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          shadows: [Shadow(blurRadius: 2, color: Colors.black, offset: Offset(1, 1))],
+        ),
       ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset((size.width - textPainter.width) / 2, (size.height - textPainter.height) / 2),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HealthBarPainter oldDelegate) => oldDelegate.health != health;
+}
+
+class _InvulnerabilityBarPainter extends CustomPainter {
+  final double charge;
+  final double timer;
+  final bool isInvulnerable;
+
+  _InvulnerabilityBarPainter({required this.charge, required this.timer, required this.isInvulnerable});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final backgroundRect = Rect.fromLTWH(0, 0, size.width, size.height);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(backgroundRect, const Radius.circular(5)),
+      Paint()..color = Colors.grey.shade800.withOpacity(0.7),
+    );
+
+    final chargeFraction = (charge / 100).clamp(0.0, 1.0);
+    final barWidth = isInvulnerable ? size.width * (timer / 10.0).clamp(0.0, 1.0) : size.width * chargeFraction;
+    final barColor = isInvulnerable
+        ? Colors.amber
+        : Color.lerp(Colors.amber.shade300, Colors.amber.shade700, chargeFraction)!;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, barWidth, size.height), const Radius.circular(5)),
+      Paint()..color = barColor,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(backgroundRect, const Radius.circular(5)),
+      Paint()
+        ..color = Colors.amber.shade800
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    final label = isInvulnerable ? '${timer.ceil()}s' : (charge > 0 ? '${charge.toInt()}%' : '');
+    if (label.isEmpty) return;
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          shadows: [Shadow(blurRadius: 2, color: Colors.black, offset: Offset(1, 1))],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset((size.width - textPainter.width) / 2, (size.height - textPainter.height) / 2),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _InvulnerabilityBarPainter oldDelegate) =>
+      oldDelegate.charge != charge || oldDelegate.timer != timer || oldDelegate.isInvulnerable != isInvulnerable;
+}
+
+// Overlay mostrato quando il gioco è in pausa
+class PausedOverlay extends StatelessWidget {
+  final FishGame game;
+
+  const PausedOverlay({super.key, required this.game});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black.withOpacity(0.7),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.pause_circle_filled,
+              color: Colors.white,
+              size: 80,
+            ).animate().fadeIn(duration: 400.ms).scale(
+                  begin: const Offset(0.5, 0.5),
+                  end: const Offset(1.0, 1.0),
+                  duration: 400.ms,
+                ),
+            const SizedBox(height: 16),
+            const Text(
+              'PAUSA',
+              style: TextStyle(
+                fontSize: 48,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    blurRadius: 10.0,
+                    color: Colors.black,
+                    offset: Offset(4.0, 4.0),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 40),
+            ElevatedButton(
+              onPressed: () => game.resumeGame(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade600,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+                textStyle: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.play_arrow, size: 28),
+                  SizedBox(width: 10),
+                  Text('RIPRENDI'),
+                ],
+              ),
+            ).animate().fadeIn(duration: 500.ms, delay: 200.ms),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Dialog per regolare separatamente il volume della musica e
+// dell'ambientale, persistiti tramite AudioManager.
+class VolumeSettingsDialog extends StatefulWidget {
+  const VolumeSettingsDialog({super.key});
+
+  @override
+  State<VolumeSettingsDialog> createState() => _VolumeSettingsDialogState();
+}
+
+class _VolumeSettingsDialogState extends State<VolumeSettingsDialog> {
+  late double _musicVolume;
+  late double _ambientVolume;
+
+  @override
+  void initState() {
+    super.initState();
+    _musicVolume = AudioManager.musicVolume;
+    _ambientVolume = AudioManager.ambientVolume;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.blueGrey.shade900,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Row(
+        children: [
+          Icon(Icons.volume_up, color: Colors.white),
+          SizedBox(width: 10),
+          Text('Volume', style: TextStyle(color: Colors.white)),
+        ],
+      ),
+      content: SizedBox(
+        width: 280,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _VolumeSlider(
+              icon: Icons.music_note,
+              label: 'Musica',
+              value: _musicVolume,
+              onChanged: (v) {
+                setState(() => _musicVolume = v);
+                AudioManager.setMusicVolume(v);
+              },
+            ),
+            const SizedBox(height: 12),
+            _VolumeSlider(
+              icon: Icons.waves,
+              label: 'Ambientale',
+              value: _ambientVolume,
+              onChanged: (v) {
+                setState(() => _ambientVolume = v);
+                AudioManager.setAmbientVolume(v);
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('CHIUDI'),
+        ),
+      ],
+    );
+  }
+}
+
+class _VolumeSlider extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  const _VolumeSlider({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: Colors.white70, size: 18),
+            const SizedBox(width: 8),
+            Text(label, style: const TextStyle(color: Colors.white)),
+            const Spacer(),
+            Text(
+              '${(value * 100).round()}%',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+        ),
+        Slider(
+          value: value,
+          onChanged: onChanged,
+          activeColor: Colors.orange.shade600,
+          inactiveColor: Colors.white24,
+        ),
+      ],
     );
   }
 }
