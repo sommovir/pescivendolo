@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pescivendolo_game/game/ally_manager.dart';
+import 'package:pescivendolo_game/game/attack_ability_manager.dart';
 import 'package:pescivendolo_game/game/coin_manager.dart';
 import 'package:pescivendolo_game/game/fish_game.dart';
 
@@ -77,6 +78,8 @@ class _AllyShopRowState extends State<AllyShopRow> {
             _AllyShopBox(game: widget.game, type: AllyType.marmoCarpa, onChanged: _refresh),
             const SizedBox(width: 6),
             _AllyShopBox(game: widget.game, type: AllyType.exabiss, onChanged: _refresh),
+            const SizedBox(width: 6),
+            _AttackAbilityShopBox(onChanged: _refresh),
           ],
         ),
       ],
@@ -178,6 +181,126 @@ class _AllyShopBox extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Complimenti! Hai sbloccato ${info.displayName}!'),
+          backgroundColor: Colors.green.shade700,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Monete insufficienti'),
+          duration: Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+/// Card per l'abilità del fascio energetico: a differenza degli alleati,
+/// "posseduto" mostra le munizioni rimaste (non un semplice segno di
+/// spunta), perché si consumano e l'abilità torna acquistabile quando
+/// finiscono.
+class _AttackAbilityShopBox extends StatelessWidget {
+  final VoidCallback onChanged;
+
+  static const double _cardSize = 84;
+  static const String _cardAsset = 'assets/images/Attack1.webp';
+
+  const _AttackAbilityShopBox({required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final owned = AttackAbilityManager.isOwned;
+    final canAfford = CoinManager.coins >= AttackAbilityManager.cost;
+    final greyedOut = !owned && !canAfford;
+
+    final cardImage = Image.asset(
+      _cardAsset,
+      width: _cardSize,
+      height: _cardSize,
+      fit: BoxFit.cover,
+    );
+
+    return GestureDetector(
+      onTap: () => _handleTap(context, owned),
+      child: Container(
+        width: _cardSize,
+        height: _cardSize,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: owned ? Colors.lightBlueAccent : Colors.white24, width: owned ? 2 : 1),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 6)],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(9),
+          child: Stack(
+            children: [
+              greyedOut
+                  ? Opacity(
+                      opacity: 0.6,
+                      child: ColorFiltered(colorFilter: _greyscaleFilter, child: cardImage),
+                    )
+                  : cardImage,
+
+              // Fascia inferiore con prezzo o munizioni rimaste
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  color: Colors.black.withOpacity(0.7),
+                  child: owned
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.bolt, color: Colors.lightBlueAccent, size: 12),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${AttackAbilityManager.ammo}/${AttackAbilityManager.maxAmmo}',
+                              style: const TextStyle(
+                                color: Colors.lightBlueAccent,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.monetization_on, color: Colors.amber, size: 11),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${AttackAbilityManager.cost}',
+                              style: TextStyle(
+                                color: canAfford ? Colors.amber : Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _handleTap(BuildContext context, bool owned) {
+    if (owned) return;
+
+    final success = AttackAbilityManager.buy();
+    if (success) {
+      onChanged();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Complimenti! Fascio energetico pronto (${AttackAbilityManager.maxAmmo} colpi)!'),
           backgroundColor: Colors.green.shade700,
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,

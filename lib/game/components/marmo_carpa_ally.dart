@@ -6,20 +6,28 @@ import 'package:flutter/material.dart';
 import 'dart:developer' as developer;
 import 'package:pescivendolo_game/game/fish_game.dart';
 import 'package:pescivendolo_game/game/ally_manager.dart';
-import 'package:pescivendolo_game/game/coin_manager.dart';
-import 'package:pescivendolo_game/game/enemy_danger.dart';
+import 'package:pescivendolo_game/game/ally_rewards.dart';
+import 'package:pescivendolo_game/game/audio_manager.dart';
 import 'package:pescivendolo_game/game/components/boss_component.dart';
+import 'package:pescivendolo_game/game/components/coin_pickup.dart';
 import 'package:pescivendolo_game/game/components/enemy_fish.dart';
 import 'package:pescivendolo_game/game/components/jellyfish_enemy.dart';
 import 'package:pescivendolo_game/game/components/electric_eel_enemy.dart';
+import 'package:pescivendolo_game/game/components/octopus_enemy.dart';
+import 'package:pescivendolo_game/game/components/player_fish.dart';
+import 'package:pescivendolo_game/game/components/sapphire_fish.dart';
 import 'package:pescivendolo_game/game/components/swordfish_enemy.dart';
 import 'package:pescivendolo_game/game/components/orca_enemy.dart';
+import 'package:pescivendolo_game/game/components/treasure_pickup.dart';
+import 'package:pescivendolo_game/game/components/whale_powerup.dart';
 
 /// Alleato "Marmo Carpa": un pesce corazzato che avanza lentamente davanti
-/// al giocatore, distruggendo (e convertendo in punti) tutto ciò che gli
-/// sbatte contro. Accumula energia con ogni distruzione e, a energia
-/// massima, scatena un attacco "terra" che ripulisce lo schermo da tutti i
-/// nemici presenti, convertendoli in punti.
+/// al giocatore, "mangiando" letteralmente tutto ciò che gli passa
+/// attraverso (nemici, tesori/monetine, PesceZaffiro, polipetto, balena —
+/// tutto tranne il giocatore stesso, che può nascondersi dietro di lui) e
+/// convertendolo in punti e/o monete a seconda di cosa si tratta. Accumula
+/// energia colpendo nemici e, a energia massima, scatena un attacco
+/// "terra" che ripulisce lo schermo convertendo tutto in ricompense.
 ///
 /// Usa lo sprite reale MarmoCarpa.webp quando disponibile; in caso di
 /// mancato caricamento ricade su un placeholder disegnato via Canvas
@@ -119,6 +127,14 @@ class MarmoCarpaAlly extends PositionComponent with CollisionCallbacks, HasGameR
   }
 
   void _handleImpact(PositionComponent other) {
+    // Il giocatore può nascondersi dietro di lui: non viene "mangiato".
+    if (other is PlayerFish) return;
+
+    // Suono di "masticazione", una volta per ogni contatto (throttle
+    // interno all'AudioManager: evita spam se più cose vengono toccate
+    // quasi nello stesso istante).
+    AudioManager.playMarmoMagnaSound();
+
     // Il controllo sul boss va fatto per primo e indipendentemente dal tipo
     // concreto: un futuro nemico boss non erediterà necessariamente da
     // nessuna delle classi nemico esistenti.
@@ -129,60 +145,55 @@ class MarmoCarpaAlly extends PositionComponent with CollisionCallbacks, HasGameR
       return;
     }
 
-    if (other is! EnemyFish &&
-        other is! JellyfishEnemy &&
-        other is! ElectricEelEnemy &&
-        other is! SwordfishEnemy &&
-        other is! OrcaEnemy) {
-      return; // ignora il giocatore, altri alleati, bolle, ecc.
-    }
+    final wasHostile = isHostileEnemy(other);
+    final result = allyConsume(gameRef, other);
+    if (!result.consumed) return; // non mangiabile (altri alleati, bolle, ecc.)
 
-    final points = dangerPoints(other);
-    gameRef.increaseScore(points);
-    final coins = _coinsFor(other);
-    if (coins > 0) CoinManager.addCoins(coins);
-    hp -= hpLostPerImpact;
-    energy = min(maxEnergy, energy + points * 2.5);
-    other.removeFromParent();
+    // Solo i nemici veri e propri "pesano" su Marmo Carpa: mangiare
+    // tesori/monetine/PesceZaffiro/creature amichevoli non gli costa HP.
+    if (wasHostile) {
+      hp -= hpLostPerImpact;
+    }
+    // L'energia sale con qualunque cosa dia punti (nemici, PesceZaffiro,
+    // polipetto, balena); le monete pure no, come da progetto originale.
+    if (result.points > 0) {
+      energy = min(maxEnergy, energy + result.points * 2.5);
+    }
 
     if (energy >= maxEnergy) {
       _triggerEarthAttack();
     }
   }
 
-  /// Monete guadagnate distruggendo [enemy]: più il nemico è pericoloso,
-  /// più monete rende, oltre ai punti (sempre assegnati tramite
-  /// [dangerPoints]) — così il tipo di nemico decide se il guadagno è "solo"
-  /// punti simbolici o anche una ricompensa in monete più sostanziosa.
-  int _coinsFor(Component enemy) {
-    if (enemy is OrcaEnemy) return 15;
-    if (enemy is SwordfishEnemy) return 8;
-    if (enemy is ElectricEelEnemy) return 5;
-    if (enemy is JellyfishEnemy) return 3;
-    if (enemy is EnemyFish) return enemy.isDangerous ? 2 : 1;
-    return 0;
-  }
-
-  /// Attacco terra: pulisce lo schermo da tutti i nemici, convertendoli in
-  /// punti (i boss subiscono solo danno, non vengono uccisi).
+  /// Attacco terra: pulisce lo schermo da tutto ciò che Marmo Carpa
+  /// "mangerebbe" comunque (nemici, tesori/monetine, PesceZaffiro,
+  /// polipetto, balena), convertendolo in punti/monete con lo stesso
+  /// feedback (testo fluttuante) di un contatto normale, così si vede
+  /// bene tutto quello che l'attacco ha appena convertito in ricompense.
+  /// I boss subiscono solo danno parziale, mai la distruzione istantanea.
   void _triggerEarthAttack() {
     developer.log('MarmoCarpaAlly: attacco terra! cleanup totale');
     energy = 0;
     _ultimateFlashTimer = 0.4;
     _shakeScreen();
+    AudioManager.playMarmoMagnaSound();
+    AudioManager.playSoundEffect(AudioManager.electroShockFile, volume: 1.0);
+    gameRef.add(_EarthquakeEffect(quakeCenter: position.clone()));
 
-    final targets = <Component>[
+    final candidates = <PositionComponent>[
       ...gameRef.children.whereType<EnemyFish>(),
       ...gameRef.children.whereType<JellyfishEnemy>(),
       ...gameRef.children.whereType<ElectricEelEnemy>(),
       ...gameRef.children.whereType<SwordfishEnemy>(),
       ...gameRef.children.whereType<OrcaEnemy>(),
+      ...gameRef.children.whereType<OctopusEnemy>(),
+      ...gameRef.children.whereType<WhalePowerup>(),
+      ...gameRef.children.whereType<CoinPickup>(),
+      ...gameRef.children.whereType<TreasurePickup>(),
+      ...gameRef.children.whereType<SapphireFish>(),
     ];
-    for (final target in targets) {
-      gameRef.increaseScore(dangerPoints(target));
-      final coins = _coinsFor(target);
-      if (coins > 0) CoinManager.addCoins(coins);
-      target.removeFromParent();
+    for (final target in candidates) {
+      allyConsume(gameRef, target);
     }
 
     // I boss (quando esisteranno) subiscono solo danno parziale, mai la
@@ -198,13 +209,13 @@ class MarmoCarpaAlly extends PositionComponent with CollisionCallbacks, HasGameR
 
   void _shakeScreen() {
     if (_shakeCooldown > 0) return;
-    _shakeCooldown = 0.6;
+    _shakeCooldown = 1.2;
     final random = Random();
     final viewfinder = gameRef.camera.viewfinder;
     viewfinder.add(
       MoveByEffect(
-        Vector2(random.nextDouble() * 16 - 8, random.nextDouble() * 16 - 8),
-        EffectController(duration: 0.04, alternate: true, repeatCount: 8),
+        Vector2(random.nextDouble() * 28 - 14, random.nextDouble() * 28 - 14),
+        EffectController(duration: 0.05, alternate: true, repeatCount: 14),
       ),
     );
   }
@@ -295,5 +306,58 @@ class MarmoCarpaAlly extends PositionComponent with CollisionCallbacks, HasGameR
       ),
       Paint()..color = Colors.amber,
     );
+  }
+}
+
+/// Effetto visivo del "terremoto" scatenato dall'attacco terra: un flash
+/// ambrato su tutto lo schermo che sfuma rapidamente, più alcuni anelli
+/// d'urto concentrici che si espandono da Marmo Carpa. Si rimuove da solo
+/// a fine animazione.
+class _EarthquakeEffect extends PositionComponent with HasGameRef<FishGame> {
+  static const double _duration = 0.9;
+  static const double _maxRadius = 750.0;
+
+  final Vector2 quakeCenter;
+  double _elapsed = 0;
+
+  _EarthquakeEffect({required this.quakeCenter}) : super(position: Vector2.zero(), priority: 900);
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _elapsed += dt;
+    if (_elapsed >= _duration) {
+      removeFromParent();
+    }
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final t = (_elapsed / _duration).clamp(0.0, 1.0);
+
+    // Flash ambrato su tutto lo schermo: intenso all'inizio, sfuma in fretta.
+    final flashOpacity = (1.0 - t * 3.5).clamp(0.0, 1.0) * 0.35;
+    if (flashOpacity > 0) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, gameRef.size.x, gameRef.size.y),
+        Paint()..color = const Color(0xFFB56A2E).withOpacity(flashOpacity),
+      );
+    }
+
+    // Tre onde d'urto concentriche, sfalsate nel tempo.
+    for (int i = 0; i < 3; i++) {
+      final ringT = (t - i * 0.12).clamp(0.0, 1.0);
+      if (ringT <= 0 || ringT >= 1) continue;
+      final radius = ringT * _maxRadius;
+      final opacity = (1 - ringT) * 0.55;
+      canvas.drawCircle(
+        Offset(quakeCenter.x, quakeCenter.y),
+        radius,
+        Paint()
+          ..color = Colors.deepOrangeAccent.withOpacity(opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 10 * (1 - ringT) + 2,
+      );
+    }
   }
 }

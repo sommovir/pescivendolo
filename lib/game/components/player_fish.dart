@@ -11,6 +11,7 @@ import 'package:pescivendolo_game/game/components/floating_score_text.dart';
 import 'package:pescivendolo_game/game/components/orca_enemy.dart';
 import 'package:pescivendolo_game/game/components/sapphire_fish.dart';
 import 'package:pescivendolo_game/game/components/treasure_pickup.dart';
+import 'package:pescivendolo_game/game/attack_ability_manager.dart';
 import 'package:pescivendolo_game/game/audio_manager.dart';
 import 'package:pescivendolo_game/game/coin_manager.dart';
 import 'package:pescivendolo_game/game/enemy_danger.dart';
@@ -33,6 +34,12 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
   bool _isHealingImmune = false;
   double _healingImmuneTimer = 0;
   final double _healingImmuneDuration = 0.3; // 0.3 secondi di immunità alla cura
+
+  // Direzione verso cui il pesce è rivolto (usata dal fascio energetico per
+  // sparare "davanti a lui"): resta quella dell'ultimo movimento
+  // orizzontale, non cambia muovendosi solo in verticale.
+  bool _facingRight = true;
+  bool get facingRight => _facingRight;
 
 
   PlayerFish() : super(size: Vector2(80, 60), position: Vector2(100, 300)) {
@@ -77,6 +84,19 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
       if (_movingDown) position.y += _speed * dt;
       if (_movingLeft) position.x -= _speed * dt;
       if (_movingRight) position.x += _speed * dt;
+
+      // Capovolge visivamente lo sprite quando cambia direzione: prima non
+      // c'era alcun segnale visibile su dove fosse rivolto il pesce, e il
+      // fascio energetico (che spara "davanti a lui" in base a questa
+      // direzione) sembrava non colpire mai nulla perché sparava dal lato
+      // sbagliato senza che si potesse notare.
+      if (_movingLeft && !_movingRight) {
+        if (_facingRight) flipHorizontallyAroundCenter();
+        _facingRight = false;
+      } else if (_movingRight && !_movingLeft) {
+        if (!_facingRight) flipHorizontallyAroundCenter();
+        _facingRight = true;
+      }
       
       // Mantieni il pesce entro i confini del gioco
       position.clamp(
@@ -140,6 +160,7 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
           gameRef.decreaseHealth(other.damageAmount);
           _awardShieldKillPoints(other);
           _activateInvulnerability();
+          _chargeAttackAbility(other.position, AttackAbilityManager.onDangerousFishCaught());
           other.removeFromParent();
         } else {
           // Il giocatore ha mangiato un pesce sicuro
@@ -148,8 +169,11 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
             developer.log('PlayerFish: collisione con pesce sicuro');
             gameRef.increaseScore();
             gameRef.increaseHealth(other.healAmount);
-            _showPointsText(other.position, 1);
-            _showHealText(other.position, other.healAmount);
+            // Offset laterale (e verticale) ben marcato in direzioni
+            // opposte: altrimenti punti e cura comparirebbero sovrapposti
+            // sullo stesso punto ed sarebbero illeggibili.
+            _showPointsText(other.position, 1, offsetX: -34, offsetY: -8);
+            _showHealText(other.position, other.healAmount, offsetX: 34, offsetY: 8);
             _activateHealingImmunity();
             other.removeFromParent();
           }
@@ -172,13 +196,21 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
         _activateInvulnerability();
         other.removeFromParent();
       } else if (other is ElectricEelEnemy) {
-        // La murena elettrica è molto pericolosa e toglie il 25% di vita
-        developer.log('PlayerFish: collisione con murena elettrica');
-        gameRef.decreaseHealth(other.damageAmount);
-        _activateInvulnerability();
-        // La murena non viene rimossa quando fa collisione
-        // Questo permette alla murena di continuare a esistere e usare i suoi attacchi elettrici
-        // other.removeFromParent(); - commentiamo questa linea
+        if (gameRef.isPlayerInvulnerable) {
+          // Con lo scudo attivo il contatto la uccide davvero (unico modo:
+          // senza scudo è una minaccia persistente che non muore mai).
+          developer.log('PlayerFish: murena elettrica uccisa con lo scudo');
+          _awardShieldKillPoints(other);
+          _chargeAttackAbility(other.position, AttackAbilityManager.onEelKilled());
+          other.removeFromParent();
+        } else {
+          // La murena elettrica è molto pericolosa e toglie parecchia vita
+          developer.log('PlayerFish: collisione con murena elettrica');
+          gameRef.decreaseHealth(other.damageAmount);
+          _activateInvulnerability();
+          // Senza scudo non viene rimossa: resta per continuare a usare i
+          // suoi attacchi elettrici.
+        }
       } else if (other is OrcaEnemy) {
         if (gameRef.isPlayerInvulnerable) {
           // Con lo scudo attivo il giocatore può speronarla: ogni contatto
@@ -206,8 +238,16 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
           other.captured = true;
           gameRef.increaseScore(other.scorePoints);
           CoinManager.addCoins(other.coinsReward);
-          gameRef.add(FloatingScoreText(position: other.position.clone(), text: '+${other.coinsReward}'));
-          _showPointsText(other.position, other.scorePoints);
+          // Offset laterale (e verticale) ben marcato in direzioni opposte:
+          // altrimenti monete e punti comparirebbero sovrapposti sullo
+          // stesso punto ed sarebbero illeggibili.
+          gameRef.add(FloatingScoreText(
+            position: other.position.clone()
+              ..x -= 34
+              ..y -= 8,
+            text: '+${other.coinsReward}',
+          ));
+          _showPointsText(other.position, other.scorePoints, offsetX: 34, offsetY: 8);
           other.removeFromParent();
         }
       } else if (other is CoinPickup) {
@@ -262,22 +302,44 @@ class PlayerFish extends SpriteComponent with CollisionCallbacks, HasGameRef<Fis
     }
   }
 
-  // Testo blu "+Np" quando si guadagnano punti.
-  void _showPointsText(Vector2 position, int points) {
+  // Testo blu "+Np" quando si guadagnano punti. [offsetX]/[offsetY]
+  // spostano il testo, usato quando compare insieme ad un altro testo
+  // fluttuante nello stesso punto (es. monete+punti, punti+cura) per
+  // evitare che si sovrappongano.
+  void _showPointsText(Vector2 position, int points, {double offsetX = 0, double offsetY = 0}) {
     gameRef.add(FloatingScoreText(
-      position: position.clone(),
+      position: position.clone()
+        ..x += offsetX
+        ..y += offsetY,
       text: '+${points}p',
       color: FloatingScoreText.pointsColor,
     ));
   }
 
-  // Testo verde "+Nhp" quando si recupera vita.
-  void _showHealText(Vector2 position, double amount) {
+  // Testo verde "+Nhp" quando si recupera vita. Vedi [_showPointsText] per
+  // il significato di [offsetX]/[offsetY].
+  void _showHealText(Vector2 position, double amount, {double offsetX = 0, double offsetY = 0}) {
     final formatted = amount < 1 ? amount.toStringAsFixed(1) : amount.round().toString();
     gameRef.add(FloatingScoreText(
-      position: position.clone(),
+      position: position.clone()
+        ..x += offsetX
+        ..y += offsetY,
       text: '+${formatted}hp',
       color: FloatingScoreText.healColor,
+    ));
+  }
+
+  // Testo azzurro "⚡+N" quando un nemico ricarica le munizioni del fascio
+  // energetico (vedi AttackAbilityManager). [gained] è già il risultato
+  // della chiamata all'hook: se 0 (abilità non posseduta, munizioni già
+  // piene, o tiro a vuoto sul 30%) non mostra nulla. Spostato sotto la
+  // posizione base per non sovrapporsi a punti/cura mostrati insieme.
+  void _chargeAttackAbility(Vector2 position, int gained) {
+    if (gained <= 0) return;
+    gameRef.add(FloatingScoreText(
+      position: position.clone()..y += 28,
+      text: '⚡+$gained',
+      color: FloatingScoreText.ammoColor,
     ));
   }
 }

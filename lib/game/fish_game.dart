@@ -9,10 +9,13 @@ import 'package:flame/particles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pescivendolo_game/game/ally_manager.dart';
+import 'package:pescivendolo_game/game/attack_ability_manager.dart';
 import 'package:pescivendolo_game/game/audio_manager.dart';
 import 'package:pescivendolo_game/game/coin_manager.dart';
 import 'package:pescivendolo_game/game/components/coin_pickup.dart';
 import 'package:pescivendolo_game/game/components/enemy_fish.dart';
+import 'package:pescivendolo_game/game/components/energy_beam.dart';
+import 'package:pescivendolo_game/game/components/floating_score_text.dart';
 import 'package:pescivendolo_game/game/components/electric_eel_enemy.dart';
 import 'package:pescivendolo_game/game/components/exabiss_ally.dart';
 import 'package:pescivendolo_game/game/components/jellyfish_enemy.dart';
@@ -124,6 +127,13 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
   final double _invulnerabilityDuration = 10.0; // Durata dell'invulnerabilità in secondi
   bool _isPlayerInvulnerable = false; // Flag per indicare se il giocatore è invulnerabile
   ShieldEffect? _shieldEffect; // Effetto visivo dello scudo
+
+  // Cooldown del fascio energetico (abilità acquistabile, vedi
+  // AttackAbilityManager): 0 = pronto a sparare.
+  double _beamCooldownRemaining = 0.0;
+  double get beamCooldownRemaining => _beamCooldownRemaining;
+  double get beamCooldownFraction =>
+      (_beamCooldownRemaining / AttackAbilityManager.cooldownSeconds).clamp(0.0, 1.0);
   
   @override
   Future<void> onLoad() async {
@@ -178,10 +188,13 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       // Rimuovi l'overlay di avvio
       overlays.remove('startGame');
 
-      // Le monete sono per-partita: azzerale anche al primo avvio, per non
-      // ripartire con un saldo rimasto da una sessione precedente mai
-      // arrivata a un game over/retry.
+      // Monete e alleati sono per-partita: azzerali anche al primo avvio,
+      // per non ripartire con uno stato rimasto da una sessione precedente
+      // mai arrivata a un game over/retry.
       CoinManager.resetCoins();
+      AllyManager.resetAll();
+      AttackAbilityManager.resetAll();
+      _beamCooldownRemaining = 0;
 
       // Imposta il flag di interazione utente per l'audio
       AudioManager.setUserInteracted();
@@ -406,11 +419,16 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       // Aggiorna il timer dell'invulnerabilità se attiva
       if (_isPlayerInvulnerable) {
         _invulnerabilityTimer -= dt;
-        
+
         // Se il timer scade, disattiva l'invulnerabilità
         if (_invulnerabilityTimer <= 0) {
           _deactivateInvulnerability();
         }
+      }
+
+      // Cooldown del fascio energetico
+      if (_beamCooldownRemaining > 0) {
+        _beamCooldownRemaining = max(0, _beamCooldownRemaining - dt);
       }
     } catch (e, stackTrace) {
       developer.log('Errore in FishGame.update: $e\n$stackTrace');
@@ -792,7 +810,37 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
       togglePause();
     }
 
+    // Spazio: spara il fascio energetico (abilità acquistabile)
+    if (event is KeyDownEvent &&
+        _gameStarted &&
+        !_isPaused &&
+        event.logicalKey == LogicalKeyboardKey.space) {
+      fireEnergyBeam();
+    }
+
     return KeyEventResult.handled;
+  }
+
+  /// Spara il fascio energetico dell'abilità acquistabile, se posseduta,
+  /// non in cooldown e con munizioni disponibili.
+  void fireEnergyBeam() {
+    try {
+      if (!AttackAbilityManager.isOwned) return;
+      if (_beamCooldownRemaining > 0) return;
+      if (!AttackAbilityManager.consumeShot()) return;
+
+      _beamCooldownRemaining = AttackAbilityManager.cooldownSeconds;
+
+      final facingRight = player.facingRight;
+      final origin = Vector2(
+        player.position.x + (facingRight ? player.size.x / 2 : -player.size.x / 2),
+        player.position.y,
+      );
+      add(EnergyBeam(origin: origin, facingRight: facingRight));
+      developer.log('FishGame: fascio energetico sparato (munizioni rimaste: ${AttackAbilityManager.ammo})');
+    } catch (e, stackTrace) {
+      developer.log('Errore in FishGame.fireEnergyBeam: $e\n$stackTrace');
+    }
   }
   
   void increaseScore([int points = 1]) {
@@ -818,7 +866,14 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
     // Altrimenti applica il danno normalmente
     _health = max(0, _health - amount);
     AudioManager.playHurtSound();
-    
+
+    final formatted = amount < 1 ? amount.toStringAsFixed(1) : amount.round().toString();
+    add(FloatingScoreText(
+      position: player.position.clone(),
+      text: '-${formatted}hp',
+      color: FloatingScoreText.damageColor,
+    ));
+
     if (_health <= 0) {
       // Quando la salute arriva a zero, il giocatore perde
       _gameOver();
@@ -914,9 +969,14 @@ class FishGame extends FlameGame with KeyboardEvents, HasCollisionDetection {
         bubble.removeFromParent();
       });
 
-      // Le monete vanno guadagnate e spese entro la partita, non risparmiate
-      // tra un tentativo e l'altro.
+      children.whereType<EnergyBeam>().forEach((beam) => beam.removeFromParent());
+
+      // Monete, alleati e abilità vanno guadagnati/comprati entro la
+      // partita, non risparmiati/mantenuti tra un tentativo e l'altro.
       CoinManager.resetCoins();
+      AllyManager.resetAll();
+      AttackAbilityManager.resetAll();
+      _beamCooldownRemaining = 0;
 
       // Resetta lo stato del gioco
       score = 0;

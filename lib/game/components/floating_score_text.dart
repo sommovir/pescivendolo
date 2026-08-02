@@ -17,6 +17,8 @@ class FloatingScoreText extends TextComponent {
   static const Color coinColor = Color(0xFFFFD700); // dorato: monete
   static const Color pointsColor = Color(0xFF4FA8FF); // blu: punti
   static const Color healColor = Color(0xFF4CE05A); // verde: vita curata
+  static const Color damageColor = Color(0xFFFF5252); // rosso: vita persa
+  static const Color ammoColor = Color(0xFF7FD8FF); // azzurro: munizioni fascio energetico
 
   final Color _color;
   double _elapsed = 0;

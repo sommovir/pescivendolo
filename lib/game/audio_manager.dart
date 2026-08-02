@@ -108,6 +108,9 @@ class AudioManager {
   // Nome del file per il suono di raccolta del tesoro massimo (tier 3)
   static const String bigTreasureSoundFile = 'tesorone.mp3';
 
+  // Nome del file per il suono di Marmo Carpa quando mangia/distrugge qualcosa
+  static const String marmoMagnaSoundFile = 'marmoMagna.mp3';
+
   // Flag per indicare quali suoni sono disponibili
   static bool _eatSoundAvailable = false;
   static bool _hurtSoundAvailable = false;
@@ -117,6 +120,7 @@ class AudioManager {
   static bool _shieldSoundAvailable = false;
   static bool _coinSoundAvailable = false;
   static bool _bigTreasureSoundAvailable = false;
+  static bool _marmoMagnaSoundAvailable = false;
 
   // Variabili per limitare la riproduzione troppo frequente
   static DateTime _lastEatSound = DateTime.now().subtract(const Duration(seconds: 1));
@@ -191,6 +195,13 @@ class AudioManager {
         _bigTreasureSoundAvailable = true;
       } catch (e, stackTrace) {
         developer.log('AudioManager: ERRORE caricamento bigTreasureSoundFile: $e\n$stackTrace');
+      }
+
+      try {
+        await FlameAudio.audioCache.load(marmoMagnaSoundFile);
+        _marmoMagnaSoundAvailable = true;
+      } catch (e, stackTrace) {
+        developer.log('AudioManager: ERRORE caricamento marmoMagnaSoundFile: $e\n$stackTrace');
       }
 
       _initialized = true;
@@ -370,6 +381,27 @@ class AudioManager {
       await FlameAudio.play(bigTreasureSoundFile);
     } catch (e, stackTrace) {
       developer.log('ERRORE in AudioManager.playBigTreasureSound: $e\n$stackTrace');
+    }
+  }
+
+  static DateTime _lastMarmoMagnaSound = DateTime.now().subtract(const Duration(seconds: 1));
+
+  // Riproduci suono quando Marmo Carpa mangia/distrugge qualcosa.
+  // Con un piccolo throttle: mangiando più cose quasi nello stesso istante
+  // (es. l'attacco terra) altrimenti si sovrapporrebbero decine di copie
+  // dello stesso suono.
+  static Future<void> playMarmoMagnaSound() async {
+    if (!_marmoMagnaSoundAvailable) return;
+    if (!_userInteracted) return;
+
+    final now = DateTime.now();
+    if (now.difference(_lastMarmoMagnaSound) < _minSoundInterval) return;
+    _lastMarmoMagnaSound = now;
+
+    try {
+      await FlameAudio.play(marmoMagnaSoundFile);
+    } catch (e, stackTrace) {
+      developer.log('ERRORE in AudioManager.playMarmoMagnaSound: $e\n$stackTrace');
     }
   }
 

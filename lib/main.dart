@@ -7,6 +7,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pescivendolo_game/game/fish_game.dart';
+import 'package:pescivendolo_game/game/attack_ability_manager.dart';
 import 'package:pescivendolo_game/game/audio_manager.dart';
 import 'package:pescivendolo_game/game/ally_shop_overlay.dart';
 import 'package:pescivendolo_game/game/components/water_background.dart';
@@ -743,44 +744,69 @@ class _TouchControlsOverlayState extends State<TouchControlsOverlay> {
       _basePosition = Offset(120, screenSize.height - 180); // In basso a sinistra in portrait
     }
     
-    return Positioned.fill(
-      child: GestureDetector(
-        onPanStart: (details) {
-          if (_isWithinJoystick(details.localPosition)) {
-            setState(() {
-              _isDragging = true;
-              _updateJoystickPosition(details.localPosition);
-            });
-          }
-        },
-        onPanUpdate: (details) {
-          if (_isDragging) {
-            setState(() {
-              _updateJoystickPosition(details.localPosition);
-            });
-          }
-        },
-        onPanEnd: (_) {
-          setState(() {
-            _isDragging = false;
-            _joystickPosition = Offset.zero;
-            
-            // Ferma il movimento del pesce
-            widget.game.player.moveUp(false);
-            widget.game.player.moveDown(false);
-            widget.game.player.moveLeft(false);
-            widget.game.player.moveRight(false);
-          });
-        },
-        child: CustomPaint(
-          painter: JoystickPainter(
-            basePosition: _basePosition,
-            joystickPosition: _isDragging ? _basePosition + _joystickPosition : _basePosition,
-            baseRadius: _joystickRadius,
-            handleRadius: _handleRadius,
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            onPanStart: (details) {
+              if (_isWithinJoystick(details.localPosition)) {
+                setState(() {
+                  _isDragging = true;
+                  _updateJoystickPosition(details.localPosition);
+                });
+              }
+            },
+            onPanUpdate: (details) {
+              if (_isDragging) {
+                setState(() {
+                  _updateJoystickPosition(details.localPosition);
+                });
+              }
+            },
+            onPanEnd: (_) {
+              setState(() {
+                _isDragging = false;
+                _joystickPosition = Offset.zero;
+
+                // Ferma il movimento del pesce
+                widget.game.player.moveUp(false);
+                widget.game.player.moveDown(false);
+                widget.game.player.moveLeft(false);
+                widget.game.player.moveRight(false);
+              });
+            },
+            child: CustomPaint(
+              painter: JoystickPainter(
+                basePosition: _basePosition,
+                joystickPosition: _isDragging ? _basePosition + _joystickPosition : _basePosition,
+                baseRadius: _joystickRadius,
+                handleRadius: _handleRadius,
+              ),
+            ),
           ),
         ),
-      ),
+
+        // Pulsante per sparare il fascio energetico, visibile solo se
+        // l'abilità è posseduta (stesso tasto Spazio su desktop).
+        if (AttackAbilityManager.isOwned)
+          Positioned(
+            right: 30,
+            bottom: isLandscape ? 40 : 100,
+            child: GestureDetector(
+              onTap: () => widget.game.fireEnergyBeam(),
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.lightBlueAccent.withOpacity(0.35),
+                  border: Border.all(color: Colors.lightBlueAccent, width: 2),
+                ),
+                child: const Icon(Icons.bolt, color: Colors.white, size: 32),
+              ),
+            ),
+          ),
+      ],
     );
   }
   
@@ -1003,6 +1029,14 @@ class _GameHudOverlayState extends State<GameHudOverlay> {
           left: 10,
           child: AllyShopRow(game: widget.game),
         ),
+
+        // Munizioni/cooldown del fascio energetico, se posseduto (in alto
+        // a destra, sotto il pulsante fullscreen).
+        Positioned(
+          top: 50,
+          right: 10,
+          child: EnergyBeamHud(game: widget.game),
+        ),
       ],
     );
   }
@@ -1195,6 +1229,80 @@ class _InvulnerabilityBarPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _InvulnerabilityBarPainter oldDelegate) =>
       oldDelegate.charge != charge || oldDelegate.timer != timer || oldDelegate.isInvulnerable != isInvulnerable;
+}
+
+// Munizioni e cooldown del fascio energetico (Spazio per sparare), visibile
+// solo quando l'abilità è posseduta.
+class EnergyBeamHud extends StatefulWidget {
+  final FishGame game;
+
+  const EnergyBeamHud({super.key, required this.game});
+
+  @override
+  State<EnergyBeamHud> createState() => _EnergyBeamHudState();
+}
+
+class _EnergyBeamHudState extends State<EnergyBeamHud> {
+  darts.Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshTimer = darts.Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!AttackAbilityManager.isOwned) return const SizedBox.shrink();
+
+    final ready = widget.game.beamCooldownRemaining <= 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.lightBlueAccent.withOpacity(0.4), width: 1),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.bolt, color: ready ? Colors.lightBlueAccent : Colors.white38, size: 14),
+              const SizedBox(width: 4),
+              Text(
+                '${AttackAbilityManager.ammo}/${AttackAbilityManager.maxAmmo}',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: SizedBox(
+              width: 70,
+              height: 5,
+              child: LinearProgressIndicator(
+                value: 1.0 - widget.game.beamCooldownFraction,
+                backgroundColor: Colors.white24,
+                valueColor: AlwaysStoppedAnimation(ready ? Colors.lightBlueAccent : Colors.amber),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // Overlay mostrato quando il gioco è in pausa

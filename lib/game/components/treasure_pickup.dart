@@ -30,9 +30,9 @@ class TreasurePickup extends SpriteComponent with CollisionCallbacks, HasGameRef
   };
 
   static const Map<TreasureTier, (int, int)> coinRanges = {
-    TreasureTier.one: (5, 20),
-    TreasureTier.two: (15, 50),
-    TreasureTier.three: (70, 300),
+    TreasureTier.one: (8, 40),
+    TreasureTier.two: (15, 150),
+    TreasureTier.three: (200, 400),
   };
 
   TreasurePickup({required Vector2 position, required this.tier})

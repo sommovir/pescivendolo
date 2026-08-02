@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
@@ -7,22 +8,25 @@ import 'package:pescivendolo_game/game/fish_game.dart';
 class EnemyFish extends SpriteComponent with CollisionCallbacks, HasGameRef<FishGame> {
   final bool isDangerous;
   final double speed;
-  
+
   // Quantità di danno o cura
   final double damageAmount = 0.5; // Toglie 0.5% di vita
-  final double healAmount = 0.1; // Cura 0.1% di vita
-  
+  // Cura casuale per varietà: ogni pesce verde guarisce un po' di più o
+  // di meno, invece di un valore fisso sempre uguale.
+  late final double healAmount;
+
   EnemyFish({
     required Vector2 position,
     required this.isDangerous,
     required this.speed,
   }) : super(
-      size: isDangerous 
+      size: isDangerous
           ? Vector2(70, 50)  // Dimensione pesce pericoloso
           : Vector2(70, 40), // Dimensione pesce buono (meno alto)
       position: position
     ) {
-    developer.log('EnemyFish: costruttore chiamato, pericoloso: $isDangerous');
+    healAmount = 0.1 + Random().nextDouble() * 9.9; // 0.1 - 10.0
+    developer.log('EnemyFish: costruttore chiamato, pericoloso: $isDangerous, healAmount: $healAmount');
     anchor = Anchor.center;
   }
   

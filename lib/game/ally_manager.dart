@@ -12,8 +12,11 @@ class AllyInfo {
   const AllyInfo({required this.type, required this.displayName, required this.cost});
 }
 
-/// Gestisce lo sblocco (acquisto) permanente degli alleati e la loro
-/// persistenza tra una partita e l'altra.
+/// Gestisce lo sblocco (acquisto) degli alleati. Come le monete
+/// (CoinManager), gli acquisti sono per-partita: si azzerano a ogni game
+/// over/retry (vedi [resetAll]), così comprare un alleato richiede sempre
+/// di guadagnare le monete necessarie entro la partita in corso, invece di
+/// restare sbloccato per sempre dopo un solo acquisto fortunato.
 class AllyManager {
   static const String _storageKeyPrefix = 'pescivendolo_ally_owned_';
 
@@ -78,5 +81,21 @@ class AllyManager {
       developer.log('Errore in AllyManager.consumePurchase: $e\n$stackTrace');
     }
     developer.log('AllyManager: ${allies[type]!.displayName} consumato, di nuovo acquistabile');
+  }
+
+  /// Azzera tutti gli acquisti: chiamato a ogni game over/retry (come
+  /// CoinManager.resetCoins()), così anche gli alleati vanno ricomprati
+  /// entro la partita in corso.
+  static void resetAll() {
+    _ensureLoaded();
+    for (final type in AllyType.values) {
+      _owned[type] = false;
+      try {
+        html.window.localStorage.remove('$_storageKeyPrefix${type.name}');
+      } catch (e, stackTrace) {
+        developer.log('Errore in AllyManager.resetAll: $e\n$stackTrace');
+      }
+    }
+    developer.log('AllyManager: tutti gli acquisti azzerati');
   }
 }
